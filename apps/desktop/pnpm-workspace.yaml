@@ -1,0 +1,10 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - sharp
+  - unrs-resolver
+  - electron-winstaller
