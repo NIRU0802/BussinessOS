@@ -2,7 +2,6 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "commonjs",
-    "moduleResolution": "node",
     "lib": ["ES2022"],
     "strict": true,
     "esModuleInterop": true,
@@ -10,14 +9,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@business-os/types": ["packages/types/src/index.ts"],
-      "@business-os/config": ["packages/config/src/index.ts"],
-      "@business-os/database": ["packages/database/src/index.ts"],
-      "@business-os/shared": ["packages/shared/src/index.ts"],
-      "@business-os/ui": ["packages/ui/src/index.ts"]
-    }
+    "types": ["node"]
   },
   "exclude": ["node_modules", "dist", ".next", "out", "build"]
 }
