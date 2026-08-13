@@ -1,0 +1,885 @@
+// ============================================================================
+// PRISMA CLIENT & DATASOURCE CONFIG
+// ============================================================================
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum RoleName {
+  OWNER
+  MANAGER
+  CASHIER
+  CHEF
+  KITCHEN_STAFF
+  WAREHOUSE
+  ACCOUNTANT
+  DELIVERY_RIDER
+  CUSTOMER
+}
+
+enum DeviceType {
+  POS_DESKTOP
+  MOBILE
+  WEB_DASHBOARD
+  KDS
+}
+
+// ============================================================================
+// PHASE 1 — PLATFORM CORE (Tenancy, Auth, RBAC, Branches, Audit)
+// ============================================================================
+
+model Tenant {
+  id              String    @id @default(uuid())
+  name            String
+  slug            String    @unique
+  isActive        Boolean   @default(true) @map("is_active")
+  defaultCurrency String    @default("INR") @map("default_currency")
+  defaultLanguage String    @default("en") @map("default_language")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  branches        Branch[]
+  users           User[]
+  roles           Role[]
+  devices         Device[]
+  auditLogs       AuditLog[]
+  refreshTokens   RefreshToken[]
+
+  // Phase 2 — Menu & Catalog Engine relations
+  menuCategories       MenuCategory[]
+  menuItems            MenuItem[]
+  menuItemVariants     MenuItemVariant[]
+  modifierGroups       ModifierGroup[]
+  branchMenuOverrides  BranchMenuItemOverride[]
+
+  // Phase 5 — Combos
+  combos               Combo[]
+
+  // Phase 3 — Widget Registry relation
+  tenantWidgets   TenantWidget[]
+
+  @@map("tenants")
+}
+
+model Branch {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  name        String
+  address     String?
+  country     String    @default("IN")
+  timezone    String    @default("Asia/Kolkata")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users       UserBranch[]
+  devices     Device[]
+  auditLogs   AuditLog[]
+
+  menuOverrides BranchMenuItemOverride[]
+
+  @@index([tenantId])
+  @@map("branches")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  email         String
+  passwordHash  String    @map("password_hash")
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  phone         String?
+  isActive      Boolean   @default(true) @map("is_active")
+  isAllBranches Boolean   @default(false) @map("is_all_branches")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roles         UserRole[]
+  branches      UserBranch[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  devices       Device[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model UserBranch {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  branchId  String   @map("branch_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, branchId])
+  @@index([tenantId])
+  @@map("user_branches")
+}
+
+model Role {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  name        RoleName
+  description String?
+  isSystem    Boolean   @default(true) @map("is_system")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  description String?
+  module      String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  roleId       String   @map("role_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([tenantId])
+  @@map("user_roles")
+}
+
+model Device {
+  id           String     @id @default(uuid())
+  tenantId     String     @map("tenant_id")
+  branchId     String?    @map("branch_id")
+  userId       String?    @map("user_id")
+  type         DeviceType
+  name         String
+  fingerprint  String     @unique
+  isActive     Boolean    @default(true) @map("is_active")
+  lastSeenAt   DateTime?  @map("last_seen_at")
+  registeredAt DateTime   @default(now()) @map("registered_at")
+  revokedAt    DateTime?  @map("revoked_at")
+
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch       Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@map("devices")
+}
+
+model RefreshToken {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  userId      String    @map("user_id")
+  tokenHash   String    @unique @map("token_hash")
+  family      String
+  isRevoked   Boolean   @default(false) @map("is_revoked")
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  replacedBy  String?   @map("replaced_by")
+  ipAddress   String?   @map("ip_address")
+  userAgent   String?   @map("user_agent")
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  branchId   String?  @map("branch_id")
+  userId     String?  @map("user_id")
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch     Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// PHASE 2 & 5 — MENU & CATALOG ENGINE
+//
+// Design: the menu is defined ONCE per tenant (MenuCategory, MenuItem,
+// MenuItemVariant, ModifierGroup, ModifierOption). Individual branches do
+// NOT get their own duplicate menu — instead, BranchMenuItemOverride lets
+// any branch optionally override price/availability for specific items.
+// A branch with no override row for an item simply inherits the tenant's
+// base MenuItem values. Combo/ComboItem (Phase 5) bundle existing MenuItems
+// under a manually-set price.
+// ============================================================================
+
+model MenuCategory {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  name        String
+  description String?
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menuItems   MenuItem[]
+
+  @@index([tenantId])
+  @@map("menu_categories")
+}
+
+// A sellable menu item, defined once at the tenant level. basePrice is the
+// tenant-wide default price; branches can override it via
+// BranchMenuItemOverride without touching this row.
+//
+// Phase 5 additions: taxClassId links this item to the Tax Engine;
+// availableDays/availableFromTime/availableToTime define the master-level
+// day/time availability window (empty availableDays = available every day,
+// null time fields = no time restriction).
+model MenuItem {
+  id              String    @id @default(uuid())
+  tenantId        String    @map("tenant_id")
+  categoryId      String    @map("category_id")
+  name            String
+  description     String?
+  basePrice       Decimal   @db.Decimal(12, 2) @map("base_price")
+  imageKey        String?   @map("image_key")
+  isVegetarian    Boolean   @default(false) @map("is_vegetarian")
+  sortOrder       Int       @default(0) @map("sort_order")
+  isActive        Boolean   @default(true) @map("is_active")
+
+  taxClassId        String?  @map("tax_class_id")
+  availableDays      String[] @default([]) @map("available_days")
+  availableFromTime  String?  @map("available_from_time")
+  availableToTime    String?  @map("available_to_time")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  tenant          Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category        MenuCategory              @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  taxClass        TaxClass?                 @relation(fields: [taxClassId], references: [id], onDelete: SetNull)
+  variants        MenuItemVariant[]
+  modifierGroups  MenuItemModifierGroup[]
+  branchOverrides BranchMenuItemOverride[]
+  comboItems      ComboItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, taxClassId])
+  @@map("menu_items")
+}
+
+model MenuItemVariant {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  menuItemId  String    @map("menu_item_id")
+  name        String
+  priceDelta  Decimal   @default(0) @db.Decimal(12, 2) @map("price_delta")
+  isDefault   Boolean   @default(false) @map("is_default")
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, menuItemId])
+  @@map("menu_item_variants")
+}
+
+model ModifierGroup {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  name        String
+  minSelect   Int       @default(0) @map("min_select")
+  maxSelect   Int       @default(1) @map("max_select")
+  isRequired  Boolean   @default(false) @map("is_required")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant      Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  options     ModifierOption[]
+  menuItems   MenuItemModifierGroup[]
+
+  @@index([tenantId])
+  @@map("modifier_groups")
+}
+
+model ModifierOption {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  modifierGroupId String   @map("modifier_group_id")
+  name            String
+  priceDelta      Decimal  @default(0) @db.Decimal(12, 2) @map("price_delta")
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, modifierGroupId])
+  @@map("modifier_options")
+}
+
+model MenuItemModifierGroup {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  menuItemId      String   @map("menu_item_id")
+  modifierGroupId String   @map("modifier_group_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([menuItemId, modifierGroupId])
+  @@index([tenantId])
+  @@map("menu_item_modifier_groups")
+}
+
+// Per-branch override of a tenant-level MenuItem.
+//   - priceOverride = null  -> use MenuItem.basePrice
+//   - isAvailable = false   -> shown but marked out-of-stock at this branch
+//   - isHidden = true       -> not shown on this branch's menu at all
+//   - availableDays = []    -> inherit MenuItem.availableDays (no branch-specific restriction)
+//   - availableFromTime/availableToTime = null -> inherit MenuItem's time window
+model BranchMenuItemOverride {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  branchId      String    @map("branch_id")
+  menuItemId    String    @map("menu_item_id")
+  priceOverride Decimal?  @db.Decimal(12, 2) @map("price_override")
+  isAvailable   Boolean   @default(true) @map("is_available")
+  isHidden      Boolean   @default(false) @map("is_hidden")
+
+  availableDays     String[] @default([]) @map("available_days")
+  availableFromTime String?  @map("available_from_time")
+  availableToTime   String?  @map("available_to_time")
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  menuItem      MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, menuItemId])
+  @@index([tenantId])
+  @@index([tenantId, branchId])
+  @@map("branch_menu_item_overrides")
+}
+
+// A manually-priced bundle of existing MenuItems (e.g. "Meal Combo").
+// comboPrice is set directly by the owner/manager — NEVER auto-calculated
+// from summing item prices. The API may expose a "suggestedPrice" (sum of
+// included items' effective prices) as a read-only helper value only.
+model Combo {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  name        String
+  description String?
+  comboPrice  Decimal   @db.Decimal(12, 2) @map("combo_price")
+  imageKey    String?   @map("image_key")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items       ComboItem[]
+
+  @@index([tenantId])
+  @@map("combos")
+}
+
+model ComboItem {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  comboId    String   @map("combo_id")
+  menuItemId String   @map("menu_item_id")
+  quantity   Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  combo      Combo    @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([comboId])
+  @@map("combo_items")
+}
+
+// ============================================================================
+// PHASE 2 — CORE ENGINES (Tax, Currency, Language, Timezone, Notification, Payment, Webhook)
+// ============================================================================
+
+model TaxClass {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  name        String
+  description String?
+  isDefault   Boolean   @default(false) @map("is_default")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  rules       TaxRule[]
+  menuItems   MenuItem[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("tax_classes")
+}
+
+model TaxRule {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  taxClassId    String    @map("tax_class_id")
+  country       String
+  state         String?
+  taxType       String    @map("tax_type")
+  components    Json
+  effectiveFrom DateTime  @default(now()) @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  taxClass      TaxClass  @relation(fields: [taxClassId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, country, state])
+  @@index([taxClassId])
+  @@map("tax_rules")
+}
+
+model TenantLocaleSetting {
+  id                 String   @id @default(uuid())
+  tenantId           String   @unique @map("tenant_id")
+  baseCurrency       String   @default("INR") @map("base_currency")
+  supportedLanguages Json     @default("[\"en\"]") @map("supported_languages")
+  defaultLanguage    String   @default("en") @map("default_language")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("tenant_locale_settings")
+}
+
+model BranchTimezoneSetting {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  branchId   String   @unique @map("branch_id")
+  timezone   String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("branch_timezone_settings")
+}
+
+model NotificationLog {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  branchId         String?  @map("branch_id")
+  channel          String
+  triggerType      String   @map("trigger_type")
+  mode             String
+  consentGated     Boolean  @default(false) @map("consent_gated")
+  recipient        String
+  templateKey      String?  @map("template_key")
+  payload          Json
+  status           String
+  providerResponse Json?    @map("provider_response")
+  errorMessage     String?  @map("error_message")
+  retryCount       Int      @default(0) @map("retry_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, channel, status])
+  @@map("notification_logs")
+}
+
+model PaymentRecord {
+  id               String          @id @default(uuid())
+  tenantId         String          @map("tenant_id")
+  branchId         String          @map("branch_id")
+  orderId          String          @map("order_id")
+  method           String
+  amount           Decimal         @db.Decimal(12, 2)
+  currency         String          @default("INR")
+  status           String
+  providerRef      String?         @map("provider_ref")
+  metadata         Json?
+  recordedByUserId String          @map("recorded_by_user_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  refunds          PaymentRefund[]
+
+  @@index([tenantId, orderId])
+  @@index([tenantId, branchId])
+  @@map("payment_records")
+}
+
+model PaymentRefund {
+  id               String        @id @default(uuid())
+  tenantId         String        @map("tenant_id")
+  paymentRecordId  String        @map("payment_record_id")
+  amount           Decimal       @db.Decimal(12, 2)
+  reason           String
+  approvedByUserId String        @map("approved_by_user_id")
+  status           String
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  paymentRecord    PaymentRecord @relation(fields: [paymentRecordId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, paymentRecordId])
+  @@map("payment_refunds")
+}
+
+model WebhookEndpoint {
+  id         String         @id @default(uuid())
+  tenantId   String         @map("tenant_id")
+  name       String
+  direction  String
+  url        String?
+  secret     String
+  isActive   Boolean        @default(true) @map("is_active")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  events     WebhookEvent[]
+
+  @@index([tenantId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookEvent {
+  id             String                   @id @default(uuid())
+  tenantId       String                   @map("tenant_id")
+  endpointId     String                   @map("endpoint_id")
+  eventType      String                   @map("event_type")
+  direction      String
+  payload        Json
+  signatureValid Boolean?                 @map("signature_valid")
+  status         String
+  attemptCount   Int                      @default(0) @map("attempt_count")
+  lastAttemptAt  DateTime?                @map("last_attempt_at")
+  nextAttemptAt  DateTime?                @map("next_attempt_at")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+
+  endpoint       WebhookEndpoint          @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  attempts       WebhookDeliveryAttempt[]
+
+  @@index([tenantId, status])
+  @@index([endpointId])
+  @@map("webhook_events")
+}
+
+model WebhookDeliveryAttempt {
+  id             String       @id @default(uuid())
+  webhookEventId String       @map("webhook_event_id")
+  attemptNumber  Int          @map("attempt_number")
+  httpStatus     Int?         @map("http_status")
+  success        Boolean
+  responseBody   String?      @map("response_body")
+  errorMessage   String?      @map("error_message")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  webhookEvent   WebhookEvent @relation(fields: [webhookEventId], references: [id], onDelete: Cascade)
+
+  @@index([webhookEventId])
+  @@map("webhook_delivery_attempts")
+}
+
+// ============================================================================
+// PHASE 3 — WIDGET REGISTRY
+// ============================================================================
+
+enum WidgetStatus {
+  active
+  beta
+  deprecated
+}
+
+enum TenantWidgetStatus {
+  active
+  trial
+  disabled
+}
+
+model FeatureWidget {
+  id                   String       @id @default(uuid())
+  widgetKey            String       @unique @map("widget_key")
+  name                 String
+  description          String?
+  isOptionalFutureFlag Boolean      @default(false) @map("is_optional_future_flag")
+  status               WidgetStatus @default(active)
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  tenantWidgets TenantWidget[]
+
+  @@map("feature_widgets")
+}
+
+model TenantWidget {
+  id           String             @id @default(uuid())
+  tenantId     String             @map("tenant_id")
+  widgetKey    String             @map("widget_key")
+  status       TenantWidgetStatus @default(active)
+  activatedAt  DateTime?          @map("activated_at")
+  billingCycle String?            @map("billing_cycle")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  widget FeatureWidget @relation(fields: [widgetKey], references: [widgetKey])
+  tenant Tenant        @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, widgetKey])
+  @@index([tenantId])
+  @@map("tenant_widgets")
+}
+
+// ============================================================================
+// PHASE 4 — POS / ORDERS
+// ============================================================================
+
+enum OrderChannel {
+  pos
+  qr
+  delivery_zomato
+  delivery_swiggy
+  delivery_ubereats
+  whatsapp
+  phone
+}
+
+enum OrderStatus {
+  open
+  held
+  paid
+  voided
+  refunded
+  cancelled
+}
+
+enum PaymentMethod {
+  cash
+  card
+  upi
+  other
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+  refunded
+}
+
+enum VoidRefundType {
+  void
+  refund
+}
+
+enum VoidRefundStatus {
+  pending
+  approved
+  rejected
+}
+
+enum SyncConflictStatus {
+  pending
+  resolved
+}
+
+model Order {
+  id                 String   @id @default(uuid())
+  tenantId           String   @map("tenant_id")
+  branchId           String   @map("branch_id")
+  tableId            String?  @map("table_id")
+  deviceId           String   @map("device_id")
+  clientGeneratedId  String   @unique @map("client_generated_id")
+  channel            OrderChannel
+  status             OrderStatus @default(open)
+  subtotal           Decimal  @db.Decimal(14, 2)
+  taxAmount          Decimal  @db.Decimal(14, 2) @map("tax_amount")
+  total              Decimal  @db.Decimal(14, 2)
+  syncVersion        Int      @default(1) @map("sync_version")
+  createdBy          String   @map("created_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  items              OrderItem[]
+  payments           OrderPayment[]
+  voidRefundRequests VoidRefundRequest[]
+  conflictsAsA       SyncConflict[] @relation("ConflictOrderA")
+  conflictsAsB       SyncConflict[] @relation("ConflictOrderB")
+
+  @@index([tenantId, branchId])
+  @@index([tenantId, branchId, tableId])
+  @@index([tenantId, branchId, channel])
+  @@index([tenantId, branchId, status])
+  @@index([tenantId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  orderId      String   @map("order_id")
+  productId    String   @map("product_id")
+  quantity     Int
+  unitPrice    Decimal  @db.Decimal(14, 2) @map("unit_price")
+  modifiers    Json?
+  batchNumber  Int      @default(1) @map("batch_number")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orderId])
+  @@map("order_items")
+}
+
+model OrderPayment {
+  id                  String        @id @default(uuid())
+  tenantId            String        @map("tenant_id")
+  orderId             String        @map("order_id")
+  method              PaymentMethod
+  amount              Decimal       @db.Decimal(14, 2)
+  status              PaymentStatus @default(pending)
+  paidByCustomerRef   String?       @map("paid_by_customer_ref")
+  createdAt           DateTime      @default(now()) @map("created_at")
+
+  order               Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orderId])
+  @@map("order_payments")
+}
+
+model VoidRefundRequest {
+  id           String            @id @default(uuid())
+  tenantId     String            @map("tenant_id")
+  orderId      String            @map("order_id")
+  type         VoidRefundType
+  requestedBy  String            @map("requested_by")
+  reason       String
+  status       VoidRefundStatus  @default(pending)
+  approvedBy   String?           @map("approved_by")
+  approvedAt   DateTime?         @map("approved_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  order        Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orderId])
+  @@index([tenantId, status])
+  @@map("void_refund_requests")
+}
+
+model SyncConflict {
+  id           String              @id @default(uuid())
+  tenantId     String              @map("tenant_id")
+  branchId     String              @map("branch_id")
+  tableId      String              @map("table_id")
+  orderAId     String              @map("order_a_id")
+  orderBId     String              @map("order_b_id")
+  status       SyncConflictStatus  @default(pending)
+  resolvedBy   String?             @map("resolved_by")
+  resolvedAt   DateTime?           @map("resolved_at")
+  createdAt    DateTime            @default(now()) @map("created_at")
+
+  orderA       Order               @relation("ConflictOrderA", fields: [orderAId], references: [id])
+  orderB       Order               @relation("ConflictOrderB", fields: [orderBId], references: [id])
+
+  @@index([tenantId, branchId])
+  @@index([tenantId, status])
+  @@map("sync_conflicts")
+}
+
+model QuickCashierSetting {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  branchId  String   @map("branch_id")
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, branchId])
+  @@map("quick_cashier_settings")
+}
+
+model UserPin {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  userId     String   @map("user_id")
+  pinHash    String   @map("pin_hash")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, userId])
+  @@map("user_pins")
+}
