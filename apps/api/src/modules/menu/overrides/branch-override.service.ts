@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { TenantContextService } from '../../../common/tenant-context/tenant-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SetBranchOverrideDto } from '../dto/set-branch-override.dto';
+import { MENU_EVENTS, MenuItemUpdatedEvent } from '../events/menu.events';
 
 @Injectable()
 export class BranchOverrideService {
@@ -10,6 +12,7 @@ export class BranchOverrideService {
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly auditLog: AuditLogService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -68,6 +71,23 @@ export class BranchOverrideService {
       metadata: dto as unknown as Record<string, unknown>,
     });
 
+    // Emit menu.item_updated so downstream consumers (KDS, Reports, and
+    // eventually Phase 12 Delivery Aggregator adapters) can react.
+    // This does NOT cascade to other branches/channels — per-branch
+    // availability stays branch-scoped; consumers decide what to do
+    // (typically: notify the manager, never auto-sync).
+    this.eventEmitter.emit(
+      MENU_EVENTS.ITEM_UPDATED,
+      new MenuItemUpdatedEvent(
+        tenantId,
+        dto.branchId,
+        dto.menuItemId,
+        override.isAvailable,
+        override.isHidden,
+        override.priceOverride ? override.priceOverride.toString() : null,
+      ),
+    );
+
     return override;
   }
 
@@ -89,6 +109,20 @@ export class BranchOverrideService {
       entityType: 'MenuItem',
       entityId: menuItemId,
     });
+
+    // Clearing an override resets the item back to the tenant-wide
+    // default (available, not hidden, base price) at this branch.
+    this.eventEmitter.emit(
+      MENU_EVENTS.ITEM_UPDATED,
+      new MenuItemUpdatedEvent(
+        tenantId,
+        branchId,
+        menuItemId,
+        true,
+        false,
+        null,
+      ),
+    );
 
     return { success: true };
   }
