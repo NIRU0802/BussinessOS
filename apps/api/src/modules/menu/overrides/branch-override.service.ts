@@ -50,6 +50,9 @@ export class BranchOverrideService {
           priceOverride: dto.priceOverride ?? null,
           isAvailable: dto.isAvailable ?? true,
           isHidden: dto.isHidden ?? false,
+          availableDays: dto.availableDays ?? [],
+          availableFromTime: dto.availableFromTime ?? null,
+          availableToTime: dto.availableToTime ?? null,
         },
         update: {
           priceOverride:
@@ -57,6 +60,14 @@ export class BranchOverrideService {
           isAvailable:
             dto.isAvailable === undefined ? undefined : dto.isAvailable,
           isHidden: dto.isHidden === undefined ? undefined : dto.isHidden,
+          availableDays:
+            dto.availableDays === undefined ? undefined : dto.availableDays,
+          availableFromTime:
+            dto.availableFromTime === undefined
+              ? undefined
+              : dto.availableFromTime,
+          availableToTime:
+            dto.availableToTime === undefined ? undefined : dto.availableToTime,
         },
       }),
     );

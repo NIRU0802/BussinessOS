@@ -24,6 +24,12 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
 import { WidgetsModule } from './modules/widgets/widgets.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { QrOrderingModule } from './modules/qr-ordering/qr-ordering.module';
+import { TablesModule } from './modules/tables/tables.module';
+import { ReservationsModule } from './modules/reservations/reservations.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { OffersModule } from './modules/offers/offers.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -52,6 +58,11 @@ import { OrdersModule } from './modules/orders/orders.module';
     WebhookModule,
     WidgetsModule,
     OrdersModule,
+    TablesModule,
+    ReservationsModule,
+    QrOrderingModule,
+    CustomersModule,
+    OffersModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

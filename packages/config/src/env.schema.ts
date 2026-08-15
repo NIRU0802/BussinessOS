@@ -18,6 +18,7 @@ export const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().min(1).default("15m"),
   JWT_REFRESH_EXPIRES_IN: z.string().min(1).default("7d"),
   QR_TOKEN_HMAC_SECRET: z.string().min(32, "QR_TOKEN_HMAC_SECRET must be at least 32 characters"),
+  QR_TOKEN_MAX_AGE_DAYS: z.coerce.number().int().positive().default(90),
   COOKIE_SECRET: z.string().min(32, "COOKIE_SECRET must be at least 32 characters"),
 
   // --- PostgreSQL ---

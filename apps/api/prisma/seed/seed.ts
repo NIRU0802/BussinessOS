@@ -61,6 +61,27 @@ const PERMISSIONS: { key: string; module: string; description: string }[] = [
     module: 'qr',
     description: 'Place order via QR/table flow',
   },
+  { key: 'tables.read', module: 'tables', description: 'View tables' },
+  {
+    key: 'tables.write',
+    module: 'tables',
+    description: 'Create/update/delete tables',
+  },
+  {
+    key: 'tables.manage',
+    module: 'tables',
+    description: 'Merge/split tables and manage QR codes',
+  },
+  {
+    key: 'reservations.read',
+    module: 'reservations',
+    description: 'View reservations',
+  },
+  {
+    key: 'reservations.write',
+    module: 'reservations',
+    description: 'Create/update reservations',
+  },
 ];
 
 async function main() {

@@ -28,18 +28,8 @@ model Tenant {
   modifierGroups      ModifierGroup[]
   refreshTokens       RefreshToken[]
   roles               Role[]
-  // Phase 6 — Tables, Dining Sessions, Reservations
-  tables         Table[]
-  diningSessions DiningSession[]
-  reservations   Reservation[]
-  tenantWidgets  TenantWidget[]
-  users          User[]
-
-  customers         Customer[]
-  customerAddresses CustomerAddress[]
-
-  offers          Offer[]
-  offerDispatches OfferDispatch[]
+  tenantWidgets       TenantWidget[]
+  users               User[]
 
   @@map("tenants")
 }
@@ -57,15 +47,12 @@ model Branch {
   country       String                   @default("IN")
   auditLogs     AuditLog[]
   menuOverrides BranchMenuItemOverride[]
-  tables         Table[]
-  diningSessions DiningSession[]
-  reservations   Reservation[]
   tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   devices       Device[]
   users         UserBranch[]
 
-  qrCodes    QrCode[]
-  qrSessions QrSession[]
+  diningTables  DiningTable[]
+  qrCodes       QrCode[]
 
   @@index([tenantId])
   @@map("branches")
@@ -606,7 +593,6 @@ model Order {
   tenantId           String              @map("tenant_id")
   branchId           String              @map("branch_id")
   tableId            String?             @map("table_id")
-  table              Table?              @relation(fields: [tableId], references: [id], onDelete: SetNull)
   deviceId           String              @map("device_id")
   clientGeneratedId  String              @unique @map("client_generated_id")
   channel            OrderChannel
@@ -624,10 +610,8 @@ model Order {
   conflictsAsB       SyncConflict[]      @relation("ConflictOrderB")
   voidRefundRequests VoidRefundRequest[]
 
-  customerId String?   @map("customer_id")
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  table              DiningTable?        @relation(fields: [tableId], references: [id])
 
-  @@index([customerId])
   @@index([tenantId, branchId])
   @@index([tenantId, branchId, tableId])
   @@index([tenantId, branchId, channel])
@@ -807,21 +791,43 @@ enum SyncConflictStatus {
   resolved
 }
 
-model QrCode {
-  id         String    @id @default(uuid())
-  tenantId   String    @map("tenant_id")
-  branchId   String    @map("branch_id")
-  tableId    String    @map("table_id")
-  tokenHash  String    @unique @map("token_hash")
-  isActive   Boolean   @default(true) @map("is_active")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
-  revokedAt  DateTime? @map("revoked_at")
-  lastUsedAt DateTime? @map("last_used_at")
 
-  branch   Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  table    Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  sessions QrSession[]
+model DiningTable {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  branchId    String    @map("branch_id")
+  name        String
+  code        String
+  capacity    Int       @default(2)
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  qrCodes     QrCode[]
+  orders      Order[]
+
+  @@unique([branchId, code])
+  @@index([tenantId])
+  @@index([tenantId, branchId])
+  @@map("dining_tables")
+}
+
+model QrCode {
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  branchId    String    @map("branch_id")
+  tableId     String    @map("table_id")
+  tokenHash   String    @unique @map("token_hash")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  revokedAt   DateTime? @map("revoked_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table       DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([tenantId, branchId])
@@ -829,304 +835,23 @@ model QrCode {
   @@map("qr_codes")
 }
 
-model QrSession {
+model QrCode {
   id          String    @id @default(uuid())
   tenantId    String    @map("tenant_id")
   branchId    String    @map("branch_id")
   tableId     String    @map("table_id")
-  qrCodeId    String    @map("qr_code_id")
-  sessionHash String    @unique @map("session_hash")
-  expiresAt   DateTime  @map("expires_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  lastUsedAt  DateTime? @map("last_used_at")
-  revokedAt   DateTime? @map("revoked_at")
-
-  qrCode QrCode @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
-  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  table  Table  @relation(fields: [tableId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([tenantId, branchId])
-  @@index([tenantId, tableId])
-  @@index([tenantId, expiresAt])
-  @@map("qr_sessions")
-}
-
-// ============================================================================
-// PHASE 6 — TABLES, DINE-IN, QR ORDERING, RESERVATIONS
-// ============================================================================
-
-enum TableStatus {
-  available
-  occupied
-  preparing
-  bill_requested
-  paid
-}
-
-enum DiningSessionStatus {
-  active
-  closed
-}
-
-enum ReservationStatus {
-  pending
-  confirmed
-  seated
-  completed
-  cancelled
-  no_show
-}
-
-model Table {
-  id                String      @id @default(uuid())
-  tenantId          String      @map("tenant_id")
-  branchId          String      @map("branch_id")
-  label             String
-  capacity          Int         @default(2)
-  status            TableStatus @default(available)
-  mergedIntoTableId String?     @map("merged_into_table_id")
-  qrTokenRotatedAt  DateTime?   @map("qr_token_rotated_at")
-  isActive          Boolean     @default(true) @map("is_active")
-  createdAt         DateTime    @default(now()) @map("created_at")
-  updatedAt         DateTime    @updatedAt @map("updated_at")
-  deletedAt         DateTime?   @map("deleted_at")
-
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch         Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  mergedInto     Table?          @relation("TableMerge", fields: [mergedIntoTableId], references: [id], onDelete: SetNull)
-  mergedTables   Table[]         @relation("TableMerge")
-  orders         Order[]
-  diningSessions DiningSession[]
-  reservations   Reservation[]
-  qrCodes        QrCode[]
-  qrSessions     QrSession[]
-
-  @@unique([branchId, label])
-  @@index([tenantId, branchId])
-  @@index([tenantId, branchId, status])
-  @@map("tables")
-}
-
-model DiningSession {
-  id        String              @id @default(uuid())
-  tenantId  String              @map("tenant_id")
-  branchId  String              @map("branch_id")
-  tableId   String              @map("table_id")
-  partySize Int?                @map("party_size")
-  status    DiningSessionStatus @default(active)
-  openedBy  String?             @map("opened_by")
-  openedAt  DateTime            @default(now()) @map("opened_at")
-  closedBy  String?             @map("closed_by")
-  closedAt  DateTime?           @map("closed_at")
-  notes     String?
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  table  Table  @relation(fields: [tableId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, branchId])
-  @@index([tenantId, tableId, status])
-  @@map("dining_sessions")
-}
-
-model Reservation {
-  id              String            @id @default(uuid())
-  tenantId        String            @map("tenant_id")
-  branchId        String            @map("branch_id")
-  tableId         String?           @map("table_id")
-  customerName    String            @map("customer_name")
-  customerPhone   String            @map("customer_phone")
-  partySize       Int               @map("party_size")
-  reservedFor     DateTime          @map("reserved_for")
-  durationMinutes Int               @default(90) @map("duration_minutes")
-  status          ReservationStatus @default(pending)
-  notes           String?
-  createdBy       String            @map("created_by")
-  createdAt       DateTime          @default(now()) @map("created_at")
-  updatedAt       DateTime          @updatedAt @map("updated_at")
-  cancelledAt     DateTime?         @map("cancelled_at")
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  table  Table? @relation(fields: [tableId], references: [id], onDelete: SetNull)
-
-  @@index([tenantId, branchId, reservedFor])
-  @@index([tenantId, tableId])
-  @@index([tenantId, status])
-  @@map("reservations")
-}
-
-// ============================================
-// PHASE 9: CRM / CUSTOMER 360
-// ============================================
-
-model Customer {
-  id          String    @id @default(uuid())
-  tenantId    String    @map("tenant_id")
-  name        String
-  phone       String
-  email       String?
-  dob         DateTime? @db.Date
-  notes       String?   @db.Text
-  preferences Json?     @default("{}")
-  totalOrders Int       @default(0) @map("total_orders")
-  totalSpent  Decimal   @default(0) @db.Decimal(12, 2) @map("total_spent")
-  lastOrderAt DateTime? @map("last_order_at")
+  tokenHash   String    @unique @map("token_hash")
+  isActive    Boolean   @default(true) @map("is_active")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
+  revokedAt   DateTime? @map("revoked_at")
+  lastUsedAt  DateTime? @map("last_used_at")
 
-  orders           Order[]
-  offerDispatches  OfferDispatch[]
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  addresses        CustomerAddress[]
-
-  @@unique([tenantId, phone])
-  @@index([tenantId])
-  @@index([tenantId, dob])
-  @@index([tenantId, phone])
-  @@map("customers")
-}
-
-model CustomerAddress {
-  id          String   @id @default(uuid())
-  tenantId    String   @map("tenant_id")
-  customerId  String   @map("customer_id")
-  label       String   @default("Home")
-  line1       String
-  line2       String?
-  city        String
-  state       String?
-  postalCode  String?  @map("postal_code")
-  country     String   @default("IN")
-  latitude    Decimal? @db.Decimal(9, 6)
-  longitude   Decimal? @db.Decimal(9, 6)
-  isDefault   Boolean  @default(false) @map("is_default")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table       DiningTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
-  @@index([customerId])
-  @@map("customer_addresses")
-}
-
-// ============================================
-// PHASE 9 (EXTENDED): OFFERS & PROMOTIONS
-// ============================================
-
-enum OfferTriggerType {
-  MANUAL
-  SCHEDULED
-  RECURRING_DATE
-  BIRTHDAY
-  INACTIVITY
-}
-
-enum OfferSegment {
-  ALL_CUSTOMERS
-  BIRTHDAY_THIS_WEEK
-  INACTIVE_30_DAYS
-  INACTIVE_60_DAYS
-  TOP_SPENDERS
-  NEW_CUSTOMERS
-}
-
-model Offer {
-  id              String           @id @default(uuid())
-  tenantId        String           @map("tenant_id")
-  branchId        String?          @map("branch_id")
-  title           String
-  messageTemplate String           @db.Text @map("message_template")
-  triggerType     OfferTriggerType @map("trigger_type")
-  segment         OfferSegment     @default(ALL_CUSTOMERS)
-  scheduledFor    DateTime?        @map("scheduled_for")
-  recurringMonth  Int?             @map("recurring_month")
-  recurringDay    Int?             @map("recurring_day")
-  inactivityDays  Int?             @map("inactivity_days")
-  isActive        Boolean          @default(true) @map("is_active")
-  createdByUserId String           @map("created_by_user_id")
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-
-  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  dispatches OfferDispatch[]
-
-  @@index([tenantId])
-  @@index([tenantId, isActive])
-  @@index([tenantId, triggerType])
-  @@map("offers")
-}
-
-model OfferDispatch {
-  id                String    @id @default(uuid())
-  tenantId          String    @map("tenant_id")
-  offerId           String    @map("offer_id")
-  customerId        String    @map("customer_id")
-  preparedAt        DateTime? @map("prepared_at")
-  managerNotifiedAt DateTime  @default(now()) @map("manager_notified_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  offer    Offer    @relation(fields: [offerId], references: [id], onDelete: Cascade)
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@unique([offerId, customerId, createdAt])
-  @@index([tenantId])
-  @@index([offerId])
-  @@index([customerId])
-  @@map("offer_dispatches")
-}
-
-model KitchenTicket {
-  id             String    @id @default(uuid())
-  tenantId       String    @map("tenant_id")
-  branchId       String    @map("branch_id")
-  orderId        String    @map("order_id")
-  tableId        String?   @map("table_id")
-  channel        String
-  ticketSequence Int       @map("ticket_sequence")
-  status         String    @default("new")
-  isAddition     Boolean   @default(false) @map("is_addition")
-  printed        Boolean   @default(false)
-  printError     String?   @map("print_error")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-  readyAt        DateTime? @map("ready_at")
-  servedAt       DateTime? @map("served_at")
-
-  items          KitchenTicketItem[]
-
-  @@map("kitchen_tickets")
-}
-
-model KitchenTicketItem {
-  id              String   @id @default(uuid())
-  tenantId        String   @map("tenant_id")
-  kitchenTicketId String   @map("kitchen_ticket_id")
-  orderItemId     String   @map("order_item_id")
-  menuItemName    String   @map("menu_item_name")
-  quantity        Int
-  notes           String?
-  createdAt       DateTime @default(now()) @map("created_at")
-
-  ticket          KitchenTicket @relation(fields: [kitchenTicketId], references: [id], onDelete: Cascade)
-
-  @@map("kitchen_ticket_items")
-}
-
-model BranchKdsSettings {
-  id                     String   @id @default(uuid())
-  tenantId               String   @map("tenant_id")
-  branchId               String   @unique @map("branch_id")
-  ticketPrintingEnabled  Boolean  @default(false) @map("ticket_printing_enabled")
-  printerConnectionType  String?  @map("printer_connection_type")
-  printerHost            String?  @map("printer_host")
-  printerPort            Int?     @map("printer_port")
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
-
-  @@map("branch_kds_settings")
+  @@index([tenantId, branchId])
+  @@index([tenantId, tableId])
+  @@map("qr_codes")
 }

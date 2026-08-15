@@ -212,7 +212,7 @@ importers:
         specifier: ^3.4.2
         version: 3.9.6
       prisma:
-        specifier: ^5
+        specifier: ^5.22.0
         version: 5.22.0
       source-map-support:
         specifier: ^0.5.21

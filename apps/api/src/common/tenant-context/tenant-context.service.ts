@@ -14,7 +14,9 @@ export interface TenantRequestContext {
  * Holds the current request's tenant/user context using AsyncLocalStorage
  * so it's accessible anywhere in the call stack (services, Prisma layer)
  * without threading it through every function signature. Populated by
- * TenantContextMiddleware from the verified JWT payload.
+ * TenantContextMiddleware from the verified staff JWT payload, OR by
+ * QrSessionGuard (Phase 6) from a verified QR table token for anonymous
+ * customer requests.
  */
 @Injectable()
 export class TenantContextService {
@@ -24,11 +26,23 @@ export class TenantContextService {
     return this.storage.run(context, callback);
   }
 
+  /**
+   * Sets the context for the remainder of the current asynchronous
+   * execution without requiring a wrapping callback. Used by guards
+   * (e.g. QrSessionGuard) which cannot wrap the downstream handler chain
+   * the way middleware's `next()` callback can. Safe here because guards,
+   * interceptors, and the route handler all execute within the same
+   * continuous async chain as the originating request.
+   */
+  enterWith(context: TenantRequestContext): void {
+    this.storage.enterWith(context);
+  }
+
   getContext(): TenantRequestContext {
     const ctx = this.storage.getStore();
     if (!ctx) {
       throw new Error(
-        'TenantContext accessed outside of a request scope. Ensure TenantContextMiddleware ran.',
+        'TenantContext accessed outside of a request scope. Ensure TenantContextMiddleware or QrSessionGuard ran.',
       );
     }
     return ctx;
