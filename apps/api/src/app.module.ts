@@ -29,6 +29,8 @@ import { TablesModule } from './modules/tables/tables.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { OffersModule } from './modules/offers/offers.module';
+import { KdsModule } from './modules/kds/kds.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 @Module({
   imports: [
@@ -63,6 +65,8 @@ import { OffersModule } from './modules/offers/offers.module';
     QrOrderingModule,
     CustomersModule,
     OffersModule,
+    KdsModule,
+    InventoryModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

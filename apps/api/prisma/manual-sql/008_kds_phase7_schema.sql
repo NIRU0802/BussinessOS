@@ -1,15 +1,16 @@
 -- Phase 7: Kitchen Display System
 -- Adds kitchen_tickets, kitchen_ticket_items, and branch printer settings.
--- Apply manually via psql, following the established RLS pattern.
+-- Corrected: all id / FK columns use TEXT to match existing schema convention
+-- (branches.id, orders.id, order_items.id, tables.id are all TEXT, not native uuid).
 
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS kitchen_tickets (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     tenant_id           TEXT NOT NULL,
-    branch_id           UUID NOT NULL REFERENCES branches(id),
-    order_id            UUID NOT NULL REFERENCES orders(id),
-    table_id            UUID NULL REFERENCES tables(id),
+    branch_id           TEXT NOT NULL REFERENCES branches(id),
+    order_id            TEXT NOT NULL REFERENCES orders(id),
+    table_id            TEXT NULL REFERENCES tables(id),
     channel             TEXT NOT NULL,
     ticket_sequence     INTEGER NOT NULL,
     status              TEXT NOT NULL DEFAULT 'new'
@@ -30,10 +31,10 @@ CREATE INDEX IF NOT EXISTS idx_kitchen_tickets_order
     ON kitchen_tickets (order_id);
 
 CREATE TABLE IF NOT EXISTS kitchen_ticket_items (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     tenant_id           TEXT NOT NULL,
-    kitchen_ticket_id   UUID NOT NULL REFERENCES kitchen_tickets(id) ON DELETE CASCADE,
-    order_item_id       UUID NOT NULL REFERENCES order_items(id),
+    kitchen_ticket_id   TEXT NOT NULL REFERENCES kitchen_tickets(id) ON DELETE CASCADE,
+    order_item_id       TEXT NOT NULL REFERENCES order_items(id),
     menu_item_name      TEXT NOT NULL,
     quantity            INTEGER NOT NULL,
     notes               TEXT NULL,
@@ -44,9 +45,9 @@ CREATE INDEX IF NOT EXISTS idx_kitchen_ticket_items_ticket
     ON kitchen_ticket_items (kitchen_ticket_id);
 
 CREATE TABLE IF NOT EXISTS branch_kds_settings (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     tenant_id           TEXT NOT NULL,
-    branch_id           UUID NOT NULL UNIQUE REFERENCES branches(id),
+    branch_id           TEXT NOT NULL UNIQUE REFERENCES branches(id),
     ticket_printing_enabled BOOLEAN NOT NULL DEFAULT false,
     printer_connection_type TEXT NULL CHECK (printer_connection_type IN ('network', 'usb', NULL)),
     printer_host        TEXT NULL,
@@ -55,21 +56,23 @@ CREATE TABLE IF NOT EXISTS branch_kds_settings (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- RLS: standard tenant-scoped pattern (consistent with Phase 3 tables)
 ALTER TABLE kitchen_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kitchen_ticket_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE branch_kds_settings ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS tenant_isolation_kitchen_tickets ON kitchen_tickets;
 CREATE POLICY tenant_isolation_kitchen_tickets ON kitchen_tickets
-    USING (tenant_id = current_tenant_id())
-    WITH CHECK (tenant_id = current_tenant_id());
+    USING (tenant_id = current_setting('app.current_tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true));
 
+DROP POLICY IF EXISTS tenant_isolation_kitchen_ticket_items ON kitchen_ticket_items;
 CREATE POLICY tenant_isolation_kitchen_ticket_items ON kitchen_ticket_items
-    USING (tenant_id = current_tenant_id())
-    WITH CHECK (tenant_id = current_tenant_id());
+    USING (tenant_id = current_setting('app.current_tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true));
 
+DROP POLICY IF EXISTS tenant_isolation_branch_kds_settings ON branch_kds_settings;
 CREATE POLICY tenant_isolation_branch_kds_settings ON branch_kds_settings
-    USING (tenant_id = current_tenant_id())
-    WITH CHECK (tenant_id = current_tenant_id());
+    USING (tenant_id = current_setting('app.current_tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.current_tenant_id', true));
 
 COMMIT;

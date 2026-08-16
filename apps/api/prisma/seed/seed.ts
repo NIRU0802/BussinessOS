@@ -1,4 +1,4 @@
-﻿import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { seedFeatureWidgets } from '../../src/modules/widgets/widgets.seed';
 
 const prisma = new PrismaClient();
@@ -40,6 +40,11 @@ const PERMISSIONS: { key: string; module: string; description: string }[] = [
     key: 'inventory.write',
     module: 'inventory',
     description: 'Manage inventory',
+  },
+  {
+    key: 'inventory.adjust',
+    module: 'inventory',
+    description: 'Manually adjust stock levels (purchase/waste/correction)',
   },
   {
     key: 'payments.read',

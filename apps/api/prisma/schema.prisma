@@ -28,6 +28,7 @@ model Tenant {
   modifierGroups      ModifierGroup[]
   refreshTokens       RefreshToken[]
   roles               Role[]
+  inventoryItems InventoryItem[]
   // Phase 6 — Tables, Dining Sessions, Reservations
   tables         Table[]
   diningSessions DiningSession[]
@@ -60,6 +61,8 @@ model Branch {
   tables         Table[]
   diningSessions DiningSession[]
   reservations   Reservation[]
+  stockLevels    StockLevel[]
+  stockMovements StockMovement[]
   tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   devices       Device[]
   users         UserBranch[]
@@ -1129,4 +1132,95 @@ model BranchKdsSettings {
   updatedAt              DateTime @updatedAt @map("updated_at")
 
   @@map("branch_kds_settings")
+}
+
+// ============================================================================
+// PHASE 8 — INVENTORY / STOCK
+// ============================================================================
+
+enum StockMovementType {
+  purchase
+  sale_deduction
+  manual_adjustment
+  waste
+}
+
+model InventoryItem {
+  id             String    @id @default(uuid())
+  tenantId       String    @map("tenant_id")
+  name           String
+  unit           String
+  costPerUnit    Decimal   @map("cost_per_unit") @db.Decimal(12, 2)
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stockLevels        StockLevel[]
+  stockMovements      StockMovement[]
+  productIngredients ProductIngredient[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("inventory_items")
+}
+
+model StockLevel {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  branchId          String   @map("branch_id")
+  inventoryItemId   String   @map("inventory_item_id")
+  currentQuantity   Decimal  @default(0) @map("current_quantity") @db.Decimal(14, 3)
+  lowStockThreshold Decimal  @default(0) @map("low_stock_threshold") @db.Decimal(14, 3)
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  branch        Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, inventoryItemId])
+  @@index([tenantId])
+  @@index([tenantId, branchId])
+  @@map("stock_levels")
+}
+
+model StockMovement {
+  id               String            @id @default(uuid())
+  tenantId         String            @map("tenant_id")
+  branchId         String            @map("branch_id")
+  inventoryItemId  String            @map("inventory_item_id")
+  changeAmount     Decimal           @map("change_amount") @db.Decimal(14, 3)
+  movementType     StockMovementType @map("movement_type")
+  reason           String?
+  performedBy      String?           @map("performed_by")
+  referenceOrderId String?           @map("reference_order_id")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  branch        Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, branchId, inventoryItemId])
+  @@index([tenantId, branchId, createdAt])
+  @@map("stock_movements")
+}
+
+// NOTE: productId is deliberately a plain String, not a @relation to
+// MenuItem — matching the existing OrderItem.productId pattern in this
+// schema (Phase 4 never FK'd order items to MenuItem either).
+model ProductIngredient {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  productId       String   @map("product_id")
+  inventoryItemId String   @map("inventory_item_id")
+  quantityUsed    Decimal  @map("quantity_used") @db.Decimal(14, 3)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, inventoryItemId])
+  @@index([tenantId])
+  @@index([tenantId, productId])
+  @@map("product_ingredients")
 }
