@@ -1,4 +1,4 @@
-import {
+﻿import {
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -9,6 +9,7 @@ import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { SubscriptionService } from '../billing/subscription.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -24,6 +25,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly auditLog: AuditLogService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   /**
@@ -37,9 +39,6 @@ export class AuthService {
     const passwordHash = await argon2.hash(dto.password);
     const slug = this.slugify(dto.tenantName);
 
-    // Slug uniqueness must be checked OUTSIDE any tenant-scoped transaction —
-    // it's a platform-level lookup across all tenants, so it uses the raw
-    // client (no RLS context set) rather than `tx` inside forTenant/$transaction.
     const existingSlug = await this.prisma.tenant.findUnique({
       where: { slug },
     });
@@ -59,9 +58,6 @@ export class AuthService {
         );
       }
 
-      // Set RLS context BEFORE inserting — the tenants RLS policy checks
-      // `id = current_tenant_id()`, so the session variable must already
-      // equal the id we're about to insert, or the INSERT itself is blocked.
       await tx.$executeRawUnsafe(
         `SET LOCAL app.current_tenant_id = '${newTenantId}'`,
       );
@@ -102,6 +98,40 @@ export class AuthService {
       entityType: 'Tenant',
       entityId: result.tenant.id,
     });
+
+    // Trial subscription is created AFTER the main transaction commits,
+    // since SubscriptionService uses prisma.forTenant() (its own
+    // transaction) rather than the raw `tx` client used above — the
+    // tenant row must already exist and be committed for RLS to allow
+    // a forTenant() call against it. Deliberately non-fatal: a tenant
+    // should never be blocked from registering just because trial-plan
+    // provisioning failed; this gets flagged for manual follow-up
+    // instead of surfacing a confusing error to a brand-new user.
+    const defaultTrialPlanId = this.configService.get<string>(
+      'DEFAULT_TRIAL_PLAN_ID',
+    );
+    if (defaultTrialPlanId) {
+      try {
+        await this.subscriptionService.createInitialSubscription(
+          result.tenant.id,
+          defaultTrialPlanId,
+        );
+      } catch (err) {
+        await this.auditLog.log({
+          tenantId: result.tenant.id,
+          userId: result.user.id,
+          action: 'auth.register.trial_subscription_failed',
+          metadata: { error: err.message },
+        });
+      }
+    } else {
+      await this.auditLog.log({
+        tenantId: result.tenant.id,
+        userId: result.user.id,
+        action: 'auth.register.trial_subscription_skipped',
+        metadata: { reason: 'DEFAULT_TRIAL_PLAN_ID not configured' },
+      });
+    }
 
     const tokens = await this.issueTokenPair({
       userId: result.user.id,
@@ -227,12 +257,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Refresh token rotation: the incoming refresh token is validated,
-   * immediately revoked, and a brand new access+refresh pair is issued.
-   * If a REVOKED token is presented again (reuse), the entire token
-   * "family" is revoked — this detects stolen/replayed refresh tokens.
-   */
   async refresh(
     refreshToken: string,
     ip?: string,
@@ -249,7 +273,6 @@ export class AuthService {
     }
 
     if (stored.isRevoked) {
-      // Reuse detected — revoke the whole family as a precaution.
       await this.prisma.forTenant(stored.tenantId, (tx) =>
         tx.refreshToken.updateMany({
           where: { family: stored.family },
@@ -292,7 +315,6 @@ export class AuthService {
       throw new UnauthorizedException('User no longer active');
     }
 
-    // Revoke the used token immediately (rotation).
     await this.prisma.forTenant(stored.tenantId, (tx) =>
       tx.refreshToken.update({
         where: { id: stored.id },
@@ -323,7 +345,7 @@ export class AuthService {
       },
       ip,
       userAgent,
-      stored.family, // keep same rotation family
+      stored.family,
     );
   }
 
@@ -408,7 +430,6 @@ export class AuthService {
   private parseExpiryToDate(ttl: string): Date {
     const match = ttl.match(/^(\d+)([smhd])$/);
     if (!match) {
-      // Fallback: 30 days
       return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     }
     const value = parseInt(match[1], 10);

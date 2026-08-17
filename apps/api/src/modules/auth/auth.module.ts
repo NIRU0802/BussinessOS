@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -7,11 +7,13 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     PassportModule,
     AuditLogModule,
+    BillingModule,
     ThrottlerModule.forRoot([
       {
         ttl: 60000,

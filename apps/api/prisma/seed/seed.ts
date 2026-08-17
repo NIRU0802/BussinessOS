@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+﻿import { PrismaClient } from '@prisma/client';
 import { seedFeatureWidgets } from '../../src/modules/widgets/widgets.seed';
 
 const prisma = new PrismaClient();
@@ -23,6 +23,11 @@ const PERMISSIONS: { key: string; module: string; description: string }[] = [
   { key: 'menu.read', module: 'menu', description: 'View menu' },
   { key: 'menu.write', module: 'menu', description: 'Edit menu items' },
   { key: 'reports.read', module: 'reports', description: 'View reports' },
+  {
+    key: 'reports.read_all_branches',
+    module: 'reports',
+    description: 'View combined multi-branch report rollups (Owner-level)',
+  },
   { key: 'staff.read', module: 'staff', description: 'View staff/roles' },
   { key: 'staff.write', module: 'staff', description: 'Manage staff/roles' },
   { key: 'branches.read', module: 'branches', description: 'View branches' },
@@ -86,6 +91,21 @@ const PERMISSIONS: { key: string; module: string; description: string }[] = [
     key: 'reservations.write',
     module: 'reservations',
     description: 'Create/update reservations',
+  },
+  {
+    key: 'billing.plans.manage',
+    module: 'billing',
+    description: 'Manage subscription plans (platform admin)',
+  },
+  {
+    key: 'billing.subscription.read',
+    module: 'billing',
+    description: 'View tenant subscription details',
+  },
+  {
+    key: 'billing.subscription.manage',
+    module: 'billing',
+    description: 'Activate, change, or cancel tenant subscription',
   },
 ];
 

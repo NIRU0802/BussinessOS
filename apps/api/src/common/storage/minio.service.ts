@@ -54,14 +54,19 @@ export class MinioService {
    */
   async uploadFile(params: {
     tenantId: string;
-    namespace: 'products' | 'combos';
+    namespace: 'products' | 'combos' | 'invoices';
     buffer: Buffer;
     mimeType: string;
     originalFilename: string;
   }): Promise<UploadResult> {
     const { tenantId, namespace, buffer, mimeType, originalFilename } = params;
 
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const allowedMimeTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf',
+    ];
     if (!allowedMimeTypes.includes(mimeType)) {
       throw new Error(
         `Unsupported image mime type "${mimeType}". Allowed: ${allowedMimeTypes.join(', ')}`,
@@ -148,6 +153,8 @@ export class MinioService {
         return '.png';
       case 'image/webp':
         return '.webp';
+      case 'application/pdf':
+        return '.pdf';
       default:
         return '';
     }
