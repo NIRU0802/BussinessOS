@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0e14;
+  --foreground: #e2e8f0;
+  --panel: #131824;
+  --panel-border: #1f2937;
+  --accent: #22d3ee;
+  --danger: #f87171;
+  --warning: #fbbf24;
+  --success: #34d399;
+  --muted: #64748b;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@keyframes heartbeat-dash {
+  0% {
+    stroke-dashoffset: 300;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-heartbeat {
+  stroke-dasharray: 300;
+  animation: heartbeat-dash 1.8s linear infinite;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toast-in 0.2s ease-out;
+}

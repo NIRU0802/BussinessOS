@@ -54,7 +54,7 @@ export class MinioService {
    */
   async uploadFile(params: {
     tenantId: string;
-    namespace: 'products' | 'combos' | 'invoices';
+    namespace: 'products' | 'combos' | 'invoices' | 'receipts';
     buffer: Buffer;
     mimeType: string;
     originalFilename: string;
@@ -132,6 +132,107 @@ export class MinioService {
       new DeleteObjectCommand({ Bucket: this.bucket, Key: objectKey }),
     );
     this.logger.log(`Deleted object ${objectKey} from bucket ${this.bucket}`);
+  }
+
+  /**
+   * Lightweight connectivity check for the monitoring/health-check endpoint.
+   * Uses HeadBucketCommand — cheap, no data transfer, just confirms the
+   * bucket is reachable and credentials are valid.
+   */
+  async checkHealth(): Promise<{ up: boolean; latencyMs: number }> {
+    const start = Date.now();
+    try {
+      const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      return { up: true, latencyMs: Date.now() - start };
+    } catch {
+      return { up: false, latencyMs: Date.now() - start };
+    }
+  }
+
+  /**
+   * Sums the byte size of all objects under a tenant's namespaced prefixes
+   * (products/{tenantId}/, combos/{tenantId}/, invoices/{tenantId}/,
+   * receipts/{tenantId}/). Used by Super Admin storage reporting.
+   */
+  async getTenantStorageBytes(tenantId: string): Promise<number> {
+    const breakdown = await this.getTenantStorageBreakdown(tenantId);
+    return breakdown.total;
+  }
+
+  /**
+   * Same as getTenantStorageBytes but split by category: "images"
+   * (products + combos, which are menu/combo photos) vs "documents"
+   * (invoices + receipts, which are PDFs/generated files).
+   */
+  async getTenantStorageBreakdown(
+    tenantId: string,
+  ): Promise<{ images: number; documents: number; total: number }> {
+    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+
+    const imageNamespaces = ['products', 'combos'];
+    const documentNamespaces = ['invoices', 'receipts'];
+
+    const sumNamespaces = async (namespaces: string[]): Promise<number> => {
+      let sum = 0;
+      for (const namespace of namespaces) {
+        let continuationToken: string | undefined;
+        do {
+          const result = await this.client.send(
+            new ListObjectsV2Command({
+              Bucket: this.bucket,
+              Prefix: `${namespace}/${tenantId}/`,
+              ContinuationToken: continuationToken,
+            }),
+          );
+
+          for (const obj of result.Contents ?? []) {
+            sum += obj.Size ?? 0;
+          }
+
+          continuationToken = result.IsTruncated
+            ? result.NextContinuationToken
+            : undefined;
+        } while (continuationToken);
+      }
+      return sum;
+    };
+
+    const [images, documents] = await Promise.all([
+      sumNamespaces(imageNamespaces),
+      sumNamespaces(documentNamespaces),
+    ]);
+
+    return { images, documents, total: images + documents };
+  }
+
+  /**
+   * Sums the byte size of every object in the bucket, regardless of
+   * tenant. Used for the platform-wide storage total on System Overview.
+   */
+  async getTotalStorageBytes(): Promise<number> {
+    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+    let totalBytes = 0;
+    let continuationToken: string | undefined;
+
+    do {
+      const result = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      for (const obj of result.Contents ?? []) {
+        totalBytes += obj.Size ?? 0;
+      }
+
+      continuationToken = result.IsTruncated
+        ? result.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
+
+    return totalBytes;
   }
 
   async fileExists(objectKey: string): Promise<boolean> {

@@ -1,4 +1,4 @@
-﻿import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -16,6 +16,18 @@ export class SubscriptionController {
   @RequirePermissions('billing.subscription.read')
   getCurrent(@CurrentUser() user: { tenantId: string }) {
     return this.subscriptionService.getCurrentSubscription(user.tenantId);
+  }
+
+  @Get('invoices')
+  @RequirePermissions('billing.subscription.read')
+  getInvoices(@CurrentUser() user: { tenantId: string }) {
+    return this.subscriptionService.getInvoices(user.tenantId);
+  }
+
+  @Get('payment-method')
+  @RequirePermissions('billing.subscription.read')
+  getPaymentMethod(@CurrentUser() user: { tenantId: string }) {
+    return this.subscriptionService.getDefaultPaymentMethod(user.tenantId);
   }
 
   @Post('activate')

@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantContextService } from '../../common/tenant-context/tenant-context.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { MinioService } from '../../common/storage/minio.service';
 import { AssignPlanDto } from './dto/assign-plan.dto';
 import { ActivateSubscriptionDto } from './dto/activate-subscription.dto';
 import { calculateProration } from './proration.util';
@@ -23,6 +24,7 @@ export class SubscriptionService {
     private readonly eventEmitter: EventEmitter2,
     @Inject(BILLING_PROVIDER)
     private readonly billingProvider: IBillingProvider,
+    private readonly minio: MinioService,
   ) {}
 
   async getCurrentSubscription(tenantId: string) {
@@ -36,9 +38,60 @@ export class SubscriptionService {
   }
 
   /**
+   * Returns invoice history for the tenant, newest first. Resolves
+   * pdfObjectKey to a signed, time-limited download URL at read time -
+   * never stores or returns a public URL, per storage architecture rules.
+   */
+  async getInvoices(tenantId: string) {
+    const invoices = await this.prisma.forTenant(tenantId, (tx) =>
+      tx.invoice.findMany({
+        where: { tenantId },
+        include: { items: true },
+        orderBy: { issuedAt: 'desc' },
+      }),
+    );
+
+    return Promise.all(
+      invoices.map(async (invoice) => ({
+        ...invoice,
+        pdfUrl: invoice.pdfObjectKey
+          ? await this.minio.getSignedReadUrl(invoice.pdfObjectKey)
+          : null,
+      })),
+    );
+  }
+
+  /**
+   * Returns the tenant's default (isDefault: true) payment method, with
+   * the providerToken masked - never expose the raw token to the client.
+   */
+  async getDefaultPaymentMethod(tenantId: string) {
+    const method = await this.prisma.forTenant(tenantId, (tx) =>
+      tx.billingPaymentMethod.findFirst({
+        where: { tenantId, isDefault: true },
+      }),
+    );
+
+    if (!method) return null;
+
+    return {
+      id: method.id,
+      provider: method.provider,
+      isDefault: method.isDefault,
+      createdAt: method.createdAt,
+      maskedToken: this.maskToken(method.providerToken),
+    };
+  }
+
+  private maskToken(token: string): string {
+    if (token.length <= 4) return '****';
+    return `**** **** **** ${token.slice(-4)}`;
+  }
+
+  /**
    * Assigns a brand-new TRIAL subscription to a tenant that has none
    * yet (e.g. at tenant registration). No billing provider is involved
-   * at this stage — trials don't require a payment method.
+   * at this stage - trials don't require a payment method.
    */
   async createInitialSubscription(
     tenantId: string,
@@ -75,7 +128,7 @@ export class SubscriptionService {
    * Converts a trial (or reactivates a cancelled/past_due) subscription
    * into a live, provider-backed paid subscription. Creates a billing
    * customer + subscription with the active provider (Razorpay/Stripe)
-   * and stores the returned IDs — this is what populates the
+   * and stores the returned IDs - this is what populates the
    * provider/providerCustomerId/providerSubscriptionId columns that
    * the webhook handler later matches incoming events against.
    */
@@ -155,7 +208,7 @@ export class SubscriptionService {
 
   /**
    * Changes a tenant's plan mid-cycle. Calculates proration and creates
-   * a one-off invoice item for the difference — does NOT re-create the
+   * a one-off invoice item for the difference - does NOT re-create the
    * provider subscription; that's a Phase-3 refinement.
    */
   async changePlan(tenantId: string, dto: AssignPlanDto) {

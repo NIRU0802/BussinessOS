@@ -20,8 +20,14 @@ async function bootstrap() {
   app.use('/webhooks/billing', express.raw({ type: 'application/json' }));
 
   app.use(helmet());
+  const corsOrigins = (
+    configService.get<string>('CORS_ORIGIN') ?? 'http://localhost:3000'
+  )
+    .split(',')
+    .map((o) => o.trim());
+
   app.enableCors({
-    origin: configService.get<string>('CORS_ORIGIN') ?? '*',
+    origin: corsOrigins,
     credentials: true,
   });
   app.useGlobalPipes(

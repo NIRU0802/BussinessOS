@@ -1,4 +1,4 @@
-﻿import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
@@ -33,6 +33,9 @@ import { KdsModule } from './modules/kds/kds.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
+import { SuperAdminModule } from './modules/super-admin/super-admin.module';
+import { PlansManagementModule } from './modules/super-admin/plans-management/plans-management.module';
 
 @Module({
   imports: [
@@ -71,6 +74,9 @@ import { BillingModule } from './modules/billing/billing.module';
     InventoryModule,
     ReportsModule,
     BillingModule,
+    ExpensesModule,
+    SuperAdminModule,
+    PlansManagementModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
