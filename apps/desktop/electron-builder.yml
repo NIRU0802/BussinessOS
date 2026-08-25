@@ -1,43 +1,77 @@
-appId: com.electron.app
-productName: desktop
+appId: com.gr8.businessos.pos
+productName: Business OS POS
+copyright: Copyright © 2026 Business OS
+
 directories:
+  output: dist-installer
   buildResources: build
+
 files:
-  - '!**/.vscode/*'
-  - '!src/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
-  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
-asarUnpack:
-  - resources/**
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+icon: build/icon.png
+
 win:
-  executableName: desktop
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  # certificateFile: "ADD YOUR CERTIFICATE PATH HERE (.pfx)"
+  # certificatePassword: "ADD YOUR CERTIFICATE PASSWORD HERE (use env var, not literal)"
+  # signingHashAlgorithms: ["sha256"]
+  # rfc3161TimeStampServer: "http://timestamp.digicert.com"
+
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Business OS POS
+  uninstallDisplayName: Business OS POS
+  deleteAppDataOnUninstall: false
+
 mac:
-  entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+  category: public.app-category.business
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # identity: "ADD YOUR APPLE DEVELOPER ID HERE (Developer ID Application: Your Name (TEAMID))"
+  # entitlements: build/entitlements.mac.plist
+  # entitlementsInherit: build/entitlements.mac.plist
+
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# afterSign: build/notarize.js
+
 linux:
   target:
-    - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
-  category: Utility
-appImage:
-  artifactName: ${name}-${version}.${ext}
-npmRebuild: false
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: build/icon.png
+  category: Office
+  maintainer: Business OS <support@yourplatform.app>
+
 publish:
   provider: generic
-  url: https://example.com/auto-updates
+  url: https://updates.yourplatform.app/latest
+  channel: latest

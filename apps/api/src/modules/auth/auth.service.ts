@@ -1,4 +1,4 @@
-﻿import {
+import {
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { SubscriptionService } from '../billing/subscription.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -26,13 +27,14 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly auditLog: AuditLogService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
    * Registers a brand-new tenant + its first Owner user in one transaction.
    * This is the ONLY flow that creates a tenant without an existing
    * authenticated/tenant-scoped context, so it deliberately uses the raw
-   * $transaction (not forTenant) — there's no tenant_id to scope by yet
+   * $transaction (not forTenant) â€” there's no tenant_id to scope by yet
    * until the tenant row itself is created inside this same transaction.
    */
   async register(dto: RegisterDto) {
@@ -99,9 +101,14 @@ export class AuthService {
       entityId: result.tenant.id,
     });
 
+    // tenant.created fires after the main transaction commits so listeners
+    // (e.g. ExpenseCategoriesService.seedDefaultCategories) can safely use
+    // prisma.forTenant() against an already-committed tenant row.
+    this.eventEmitter.emit('tenant.created', { tenantId: result.tenant.id });
+
     // Trial subscription is created AFTER the main transaction commits,
     // since SubscriptionService uses prisma.forTenant() (its own
-    // transaction) rather than the raw `tx` client used above — the
+    // transaction) rather than the raw `tx` client used above â€” the
     // tenant row must already exist and be committed for RLS to allow
     // a forTenant() call against it. Deliberately non-fatal: a tenant
     // should never be blocked from registering just because trial-plan

@@ -6,6 +6,8 @@ import { PlansManagementModule } from './plans-management/plans-management.modul
 import { WidgetManagementModule } from './widget-management/widget-management.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
+import { CustomerDataModule } from './customer-data/customer-data.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { MonitoringModule } from './monitoring/monitoring.module';
     WidgetManagementModule,
     FeatureFlagsModule,
     MonitoringModule,
+    CustomerDataModule,
+    OnboardingModule,
   ],
   exports: [SuperAdminAuditModule],
 })

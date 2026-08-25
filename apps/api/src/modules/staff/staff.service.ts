@@ -8,6 +8,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TenantContextService } from '../../common/tenant-context/tenant-context.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateStaffUserDto } from './dto/create-staff-user.dto';
+import { UpdateStaffUserDto } from './dto/update-staff-user.dto';
+import { ChangeOwnPasswordDto } from './dto/change-own-password.dto';
+import { UnauthorizedException } from '@nestjs/common';
 
 @Injectable()
 export class StaffService {
@@ -139,6 +142,134 @@ export class StaffService {
       action: 'staff.deactivate',
       entityType: 'User',
       entityId: id,
+    });
+
+    return { success: true };
+  }
+
+  async reactivate(id: string) {
+    const tenantId = this.tenantContext.getTenantId();
+    const actorId = this.tenantContext.getUserId();
+
+    await this.findOne(id);
+
+    await this.prisma.forTenant(tenantId, (tx) =>
+      tx.user.update({ where: { id }, data: { isActive: true } }),
+    );
+
+    await this.auditLog.log({
+      tenantId,
+      userId: actorId,
+      action: 'staff.reactivate',
+      entityType: 'User',
+      entityId: id,
+    });
+
+    return { success: true };
+  }
+
+  async update(id: string, dto: UpdateStaffUserDto) {
+    const tenantId = this.tenantContext.getTenantId();
+    const actorId = this.tenantContext.getUserId();
+
+    await this.findOne(id);
+
+    if (dto.roleId) {
+      const role = await this.prisma.forTenant(tenantId, (tx) =>
+        tx.role.findFirst({ where: { id: dto.roleId } }),
+      );
+      if (!role) throw new NotFoundException('Role not found');
+    }
+
+    if (dto.branchIds?.length) {
+      const branchCount = await this.prisma.forTenant(tenantId, (tx) =>
+        tx.branch.count({
+          where: { id: { in: dto.branchIds }, deletedAt: null },
+        }),
+      );
+      if (branchCount !== dto.branchIds.length) {
+        throw new NotFoundException('One or more branch IDs are invalid');
+      }
+    }
+
+    const updated = await this.prisma.forTenant(tenantId, async (tx) => {
+      if (dto.branchIds) {
+        await tx.userBranch.deleteMany({ where: { userId: id } });
+      }
+
+      return tx.user.update({
+        where: { id },
+        data: {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          isAllBranches: dto.isAllBranches,
+          roles: dto.roleId
+            ? {
+                deleteMany: {},
+                create: [{ tenantId, roleId: dto.roleId }],
+              }
+            : undefined,
+          branches: dto.branchIds?.length
+            ? {
+                create: dto.branchIds.map((branchId) => ({
+                  tenantId,
+                  branchId,
+                })),
+              }
+            : undefined,
+        },
+        include: {
+          roles: { include: { role: true } },
+          branches: { include: { branch: true } },
+        },
+      });
+    });
+
+    await this.auditLog.log({
+      tenantId,
+      userId: actorId,
+      action: 'staff.update',
+      entityType: 'User',
+      entityId: id,
+    });
+
+    const { passwordHash: _omit, ...safeUser } = updated;
+    return safeUser;
+  }
+
+  async changeOwnPassword(dto: ChangeOwnPasswordDto) {
+    const tenantId = this.tenantContext.getTenantId();
+    const userId = this.tenantContext.getUserId();
+
+    const user = await this.prisma.forTenant(tenantId, (tx) =>
+      tx.user.findFirst({ where: { id: userId, deletedAt: null } }),
+    );
+    if (!user) throw new NotFoundException('User not found');
+
+    const currentValid = await argon2.verify(
+      user.passwordHash,
+      dto.currentPassword,
+    );
+    if (!currentValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const newHash = await argon2.hash(dto.newPassword);
+
+    await this.prisma.forTenant(tenantId, (tx) =>
+      tx.user.update({
+        where: { id: userId },
+        data: { passwordHash: newHash },
+      }),
+    );
+
+    await this.auditLog.log({
+      tenantId,
+      userId,
+      action: 'staff.change_own_password',
+      entityType: 'User',
+      entityId: userId,
     });
 
     return { success: true };

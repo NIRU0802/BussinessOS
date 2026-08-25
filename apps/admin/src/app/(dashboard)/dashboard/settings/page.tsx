@@ -1,7 +1,13 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { changeOwnPassword } from "@/lib/api/staff-api";
+import { extractApiErrorMessage } from "@/lib/api-client";
 
 /**
  * IMPORTANT — backend gaps affecting this screen, not silently worked
@@ -21,8 +27,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
  *    clearly-marked future/upsell placeholder per the Phase 14 spec,
  *    matching what was explicitly asked for (non-functional by design).
  *
- * Recommend prioritizing a real tenant-settings PATCH endpoint next —
- * everything else on this page is blocked on it.
+ * Change Password (below) uses POST /staff/me/change-password, added
+ * alongside staff reactivate/update — this is real and functional.
  */
 export default function SettingsPage() {
   const { tenant } = useAuth();
@@ -56,6 +62,8 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      <ChangePasswordCard />
+
       <Card>
         <CardHeader>
           <CardTitle>Custom Domain</CardTitle>
@@ -79,5 +87,73 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ChangePasswordCard() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (newPassword !== confirmPassword) {
+      toast.error("New password and confirmation do not match");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await changeOwnPassword({ currentPassword, newPassword });
+      toast.success("Password updated");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      toast.error(extractApiErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Change Password</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="max-w-sm space-y-3">
+          <Input
+            label="Current password"
+            type="password"
+            required
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+          />
+          <Input
+            label="New password"
+            type="password"
+            required
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+          <p className="text-xs text-slate-500">
+            At least 10 characters, with uppercase, lowercase, and a number.
+          </p>
+          <Input
+            label="Confirm new password"
+            type="password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
+          <Button type="submit" isLoading={isSubmitting}>
+            Update password
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

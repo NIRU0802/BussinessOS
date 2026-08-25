@@ -14,6 +14,7 @@ model Tenant {
   isActive            Boolean                  @default(true) @map("is_active")
   defaultCurrency     String                   @default("INR") @map("default_currency")
   defaultLanguage     String                   @default("en") @map("default_language")
+  businessType        String?  @map("business_type")
   createdAt           DateTime                 @default(now()) @map("created_at")
   updatedAt           DateTime                 @updatedAt @map("updated_at")
   deletedAt           DateTime?                @map("deleted_at")

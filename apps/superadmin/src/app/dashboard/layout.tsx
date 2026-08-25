@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { href: "/dashboard/widgets", label: "Widgets", icon: "🧩", requiresGr8: false },
   { href: "/dashboard/feature-flags", label: "Feature Flags", icon: "🚩", requiresGr8: false },
   { href: "/dashboard/monitoring", label: "Monitoring", icon: "🩺", requiresGr8: false },
+  { href: "/dashboard/customers", label: "Customer Data", icon: "👥", requiresGr8: true },
+  { href: "/dashboard/onboarding", label: "Onboard Business", icon: "\u2795", requiresGr8: true },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

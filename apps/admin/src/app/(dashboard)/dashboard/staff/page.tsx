@@ -12,8 +12,14 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { useAuth } from "@/lib/auth-context";
 import { StaffFormDialog } from "@/components/staff/staff-form-dialog";
+import { StaffEditDialog } from "@/components/staff/staff-edit-dialog";
 import { QuickCashierToggle } from "@/components/staff/quick-cashier-toggle";
-import { listStaff, deactivateStaffUser, type StaffUser } from "@/lib/api/staff-api";
+import {
+  listStaff,
+  deactivateStaffUser,
+  reactivateStaffUser,
+  type StaffUser,
+} from "@/lib/api/staff-api";
 import { extractApiErrorMessage } from "@/lib/api-client";
 
 export default function StaffPage() {
@@ -22,8 +28,10 @@ export default function StaffPage() {
   const effectiveBranchId = activeBranchId ?? session?.branchIds[0] ?? null;
 
   const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<StaffUser | null>(null);
   const [deactivating, setDeactivating] = useState<StaffUser | null>(null);
   const [isDeactivating, setIsDeactivating] = useState(false);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
   const { data: staff = [], isLoading } = useQuery({ queryKey: ["staff"], queryFn: listStaff });
 
@@ -43,6 +51,19 @@ export default function StaffPage() {
       toast.error(extractApiErrorMessage(err));
     } finally {
       setIsDeactivating(false);
+    }
+  }
+
+  async function handleReactivate(member: StaffUser) {
+    setReactivatingId(member.id);
+    try {
+      await reactivateStaffUser(member.id);
+      toast.success("Staff member reactivated");
+      refetch();
+    } catch (err) {
+      toast.error(extractApiErrorMessage(err));
+    } finally {
+      setReactivatingId(null);
     }
   }
 
@@ -89,16 +110,36 @@ export default function StaffPage() {
                       {member.email} · {member.roles.map((r) => r.role.name).join(", ")}
                     </p>
                   </div>
-                  {member.isActive && (
+                  <div className="flex items-center gap-3">
                     <PermissionGate permission="staff.write">
                       <button
-                        className="text-sm text-red-600 hover:text-red-800"
-                        onClick={() => setDeactivating(member)}
+                        className="text-sm text-slate-600 hover:text-slate-900"
+                        onClick={() => setEditing(member)}
                       >
-                        Deactivate
+                        Edit
                       </button>
                     </PermissionGate>
-                  )}
+                    {member.isActive ? (
+                      <PermissionGate permission="staff.write">
+                        <button
+                          className="text-sm text-red-600 hover:text-red-800"
+                          onClick={() => setDeactivating(member)}
+                        >
+                          Deactivate
+                        </button>
+                      </PermissionGate>
+                    ) : (
+                      <PermissionGate permission="staff.write">
+                        <button
+                          className="text-sm text-green-600 hover:text-green-800 disabled:opacity-50"
+                          disabled={reactivatingId === member.id}
+                          onClick={() => handleReactivate(member)}
+                        >
+                          {reactivatingId === member.id ? "..." : "Reactivate"}
+                        </button>
+                      </PermissionGate>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -109,6 +150,8 @@ export default function StaffPage() {
       {effectiveBranchId && <QuickCashierToggle branchId={effectiveBranchId} />}
 
       <StaffFormDialog open={formOpen} onClose={() => setFormOpen(false)} onSaved={refetch} />
+
+      <StaffEditDialog staffUser={editing} onClose={() => setEditing(null)} onSaved={refetch} />
 
       <ConfirmDialog
         open={!!deactivating}
