@@ -4,7 +4,6 @@
 // later phases) subscribe to these instead of reaching into Orders'
 // repository directly — preserving strict module boundaries per the
 // locked architecture.
-
 export const ORDER_EVENTS = {
   CREATED: 'order.created',
   ITEMS_ADDED: 'order.items_added',
@@ -22,12 +21,27 @@ export const ORDER_EVENTS = {
   TABLE_STATUS_CHANGED: 'table.status_changed',
 } as const;
 
+// Per-item shape needed by KDS (KdsService.createTicket) to build a
+// kitchen ticket without KDS having to query Menu/OrderItem itself —
+// preserves the "module boundaries via events, not direct calls" rule.
+// orderItemId maps to the persisted OrderItem.id; menuItemName is
+// resolved from MenuItem.name at emit time since OrderItem itself only
+// stores productId (no name/lineTotal — a known schema gap noted
+// elsewhere in this project).
+export interface OrderCreatedEventItem {
+  orderItemId: string;
+  menuItemName: string;
+  quantity: number;
+  notes: string | null;
+}
+
 export interface OrderCreatedEvent {
   tenantId: string;
   branchId: string;
   orderId: string;
   channel: string;
   tableId: string | null;
+  items: OrderCreatedEventItem[];
 }
 
 export interface OrderItemsAddedEvent {
@@ -35,6 +49,9 @@ export interface OrderItemsAddedEvent {
   branchId: string;
   orderId: string;
   batchNumber: number;
+  tableId: string | null;
+  channel: string;
+  items: OrderCreatedEventItem[];
 }
 
 export interface OrderStatusUpdatedEvent {

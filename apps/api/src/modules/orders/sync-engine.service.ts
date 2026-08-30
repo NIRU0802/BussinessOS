@@ -10,6 +10,7 @@ import { PushQueuedOrdersDto } from './dto/push-queued-orders.dto';
 import {
   ORDER_EVENTS,
   OrderCreatedEvent,
+  OrderCreatedEventItem,
   OrderStatusUpdatedEvent,
   SyncConflictEvent,
   TableStatusChangedEvent,
@@ -31,6 +32,28 @@ export class SyncEngineService {
     private readonly taxService: TaxService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
+
+  // Duplicated from OrdersService rather than shared, since the two
+  // services aren't otherwise coupled — resolves productId -> MenuItem.name
+  // for KDS ticket event payloads. Falls back to "Unknown item" for any
+  // productId that no longer resolves (deleted menu item).
+  private async resolveItemNames(
+    tenantId: string,
+    productIds: string[],
+  ): Promise<Map<string, string>> {
+    const uniqueIds = Array.from(new Set(productIds));
+    const menuItems = await this.prisma.forTenant(tenantId, (tx) =>
+      tx.menuItem.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true, name: true },
+      }),
+    );
+    const map = new Map<string, string>();
+    for (const item of menuItems) {
+      map.set(item.id, item.name);
+    }
+    return map;
+  }
 
   // ---------------------------------------------------------------------
   // PULL: everything changed since lastSyncedAt, for this branch.
@@ -189,12 +212,28 @@ export class SyncEngineService {
       },
     );
 
+    const nameMap = await this.resolveItemNames(
+      user.tenantId,
+      created.items.map((i) => i.productId),
+    );
+
+    const eventItems: OrderCreatedEventItem[] = created.items.map((item) => {
+      const modifiers = item.modifiers as { notes?: string } | null;
+      return {
+        orderItemId: item.id,
+        menuItemName: nameMap.get(item.productId) ?? 'Unknown item',
+        quantity: item.quantity,
+        notes: modifiers?.notes ?? null,
+      };
+    });
+
     this.eventEmitter.emit(ORDER_EVENTS.CREATED, {
       tenantId: user.tenantId,
       branchId: orderDto.branchId,
       orderId: created.id,
       channel: created.channel,
       tableId: created.tableId,
+      items: eventItems,
     } satisfies OrderCreatedEvent);
 
     if (conflictingOrder) {

@@ -9,6 +9,7 @@ import type {
   RefreshResponse,
   EffectiveMenuItem,
   CreateOrderPayload,
+  CreatedOrder,
 } from "./types";
 
 // Identical auth/refresh pattern to apps/admin/src/lib/api-client.ts, plus

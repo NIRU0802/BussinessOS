@@ -5,13 +5,17 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { OrderChannel } from '@prisma/client';
+
+import { CustomersService } from '../customers/customers.service';
 import { EffectiveMenuService } from '../menu/effective-menu.service';
 import { OrdersService } from '../orders/orders.service';
 import {
   CreateOrderDto,
   CreateOrderItemDto,
 } from '../orders/dto/create-order.dto';
-import { QrSession } from '../tables/qr/qr-session.service';
+import { QrSession, QrSessionService } from '../tables/qr/qr-session.service';
+
+import { CreateQrCustomerDto } from './dto/create-qr-customer.dto';
 import { QrCreateOrderDto } from './dto/qr-order-item.dto';
 
 @Injectable()
@@ -19,38 +23,92 @@ export class QrOrderingService {
   constructor(
     private readonly effectiveMenuService: EffectiveMenuService,
     private readonly ordersService: OrdersService,
+    private readonly customersService: CustomersService,
+    private readonly qrSessionService: QrSessionService,
   ) {}
 
-  /** Returns the branch's customer-facing menu, resolved via the same
-   * EffectiveMenuService staff/POS surfaces use — one source of truth. */
   async getMenu(session: QrSession) {
     return this.effectiveMenuService.getForBranch(session.branchId);
   }
 
-  /**
-   * Places an order for the verified table. branchId, tableId, and every
-   * item's price are resolved server-side — nothing here is trusted from
-   * the client except productId/variantId/modifierOptionIds/quantity.
-   * Prices are computed as JS numbers internally, then converted to
-   * fixed-2-decimal strings to match CreateOrderDto's decimal-as-string
-   * convention (server-parsed, per its own comment).
-   */
+  async registerCustomer(session: QrSession, dto: CreateQrCustomerDto) {
+    if (session.customerId) {
+      const customer = await this.customersService.findOne(session.customerId);
+
+      return {
+        customer,
+        alreadyRegistered: true,
+      };
+    }
+
+    const customer = await this.customersService.findOrCreateByPhone(
+      dto.phone,
+      dto.name,
+    );
+
+    const updateData: {
+      name?: string;
+      phone?: string;
+      dob?: string;
+    } = {};
+
+    if (customer.name !== dto.name) {
+      updateData.name = dto.name;
+    }
+
+    if (dto.dob) {
+      const existingDob = customer.dob
+        ? customer.dob.toISOString().slice(0, 10)
+        : null;
+
+      if (existingDob !== dto.dob) {
+        updateData.dob = dto.dob;
+      }
+    }
+
+    let finalCustomer = customer;
+
+    if (Object.keys(updateData).length > 0) {
+      finalCustomer = await this.customersService.update(
+        customer.id,
+        updateData,
+      );
+    }
+
+    await this.qrSessionService.attachCustomer(session, finalCustomer.id);
+
+    return {
+      customer: finalCustomer,
+      alreadyRegistered: false,
+    };
+  }
+
   async placeOrder(session: QrSession, dto: QrCreateOrderDto) {
     if (!dto.items?.length) {
       throw new BadRequestException('Order must contain at least one item.');
     }
 
+    if (!session.customerId) {
+      throw new BadRequestException(
+        'Customer information is required before placing an order.',
+      );
+    }
+
     const menu = await this.effectiveMenuService.getForBranch(session.branchId);
+
     const menuById = new Map(menu.map((item) => [item.id, item]));
 
     let subtotal = 0;
+
     const orderItems: CreateOrderItemDto[] = dto.items.map((requested) => {
       const menuItem = menuById.get(requested.productId);
+
       if (!menuItem) {
         throw new NotFoundException(
           `Menu item ${requested.productId} is not available at this branch.`,
         );
       }
+
       if (!menuItem.isAvailable) {
         throw new BadRequestException(
           `"${menuItem.name}" is currently unavailable.`,
@@ -58,17 +116,20 @@ export class QrOrderingService {
       }
 
       let unitPrice = menuItem.effectivePrice;
+
       let variantId: string | null = null;
 
       if (requested.variantId) {
         const variant = menuItem.variants.find(
           (v) => v.id === requested.variantId,
         );
+
         if (!variant) {
           throw new BadRequestException(
             `Invalid variant selected for "${menuItem.name}".`,
           );
         }
+
         unitPrice += variant.priceDelta;
         variantId = variant.id;
       }
@@ -78,15 +139,21 @@ export class QrOrderingService {
         name: string;
         priceDelta: number;
       }[] = [];
+
       if (requested.modifierOptionIds?.length) {
-        const allOptions = menuItem.modifierGroups.flatMap((g) => g.options);
+        const allOptions = menuItem.modifierGroups.flatMap(
+          (group) => group.options,
+        );
+
         for (const optionId of requested.modifierOptionIds) {
-          const option = allOptions.find((o) => o.id === optionId);
+          const option = allOptions.find((item) => item.id === optionId);
+
           if (!option) {
             throw new BadRequestException(
               `Invalid modifier selected for "${menuItem.name}".`,
             );
           }
+
           unitPrice += option.priceDelta;
           selectedModifiers.push(option);
         }
@@ -97,26 +164,18 @@ export class QrOrderingService {
       return {
         productId: requested.productId,
         quantity: requested.quantity,
-        unitPrice: unitPrice.toFixed(2), // CreateOrderItemDto expects decimal-as-string
+        unitPrice: unitPrice.toFixed(2),
         modifiers: {
           variantId,
-          selectedOptions: selectedModifiers.map((o) => ({
-            id: o.id,
-            name: o.name,
+          selectedOptions: selectedModifiers.map((option) => ({
+            id: option.id,
+            name: option.name,
           })),
         },
       };
     });
 
-    // Tax is always recomputed authoritatively server-side inside
-    // OrdersService per your Phase 4 tax-recompute rule — this is just
-    // the value passed in for the DTO's required field, not the source
-    // of truth. Passing '0.00' rather than a guessed figure so any
-    // client-tampering-detection/logging in that recompute path doesn't
-    // get confused by a QR-guest-fabricated number.
     const subtotalStr = subtotal.toFixed(2);
-    const taxAmountStr = '0.00';
-    const totalStr = subtotal.toFixed(2);
 
     const createOrderDto: CreateOrderDto = {
       branchId: session.branchId,
@@ -126,15 +185,17 @@ export class QrOrderingService {
       channel: OrderChannel.qr,
       items: orderItems,
       subtotal: subtotalStr,
-      taxAmount: taxAmountStr,
-      total: totalStr,
+      taxAmount: '0.00',
+      total: subtotalStr,
     };
 
-    const order = await this.ordersService.createOrder(
-      { id: 'qr-guest', tenantId: session.tenantId, permissions: [] },
+    return this.ordersService.createOrder(
+      {
+        id: 'qr-guest',
+        tenantId: session.tenantId,
+        permissions: [],
+      },
       createOrderDto,
     );
-
-    return order;
   }
 }

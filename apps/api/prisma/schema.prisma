@@ -14,7 +14,7 @@ model Tenant {
   isActive            Boolean                  @default(true) @map("is_active")
   defaultCurrency     String                   @default("INR") @map("default_currency")
   defaultLanguage     String                   @default("en") @map("default_language")
-  businessType        String?  @map("business_type")
+  businessType        String?                  @map("business_type")
   createdAt           DateTime                 @default(now()) @map("created_at")
   updatedAt           DateTime                 @updatedAt @map("updated_at")
   deletedAt           DateTime?                @map("deleted_at")
@@ -465,6 +465,24 @@ model BranchTimezoneSetting {
   @@map("branch_timezone_settings")
 }
 
+model TenantBranding {
+  id                String   @id @default(uuid())
+  tenantId          String   @unique @map("tenant_id")
+  businessName      String?  @map("business_name")
+  logoUrl           String?  @map("logo_url")
+  faviconUrl        String?  @map("favicon_url")
+  primaryColor      String?  @map("primary_color")
+  primaryColorDark  String?  @map("primary_color_dark")
+  inkColor          String?  @map("ink_color")
+  surfaceColor      String?  @map("surface_color")
+  fontDisplay       String?  @map("font_display")
+  receiptFooterText String?  @map("receipt_footer_text")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("tenant_branding")
+}
+
 model NotificationLog {
   id               String   @id @default(uuid())
   tenantId         String   @map("tenant_id")
@@ -842,19 +860,22 @@ model QrSession {
   branchId    String    @map("branch_id")
   tableId     String    @map("table_id")
   qrCodeId    String    @map("qr_code_id")
+  customerId  String?   @map("customer_id")
   sessionHash String    @unique @map("session_hash")
   expiresAt   DateTime  @map("expires_at")
   createdAt   DateTime  @default(now()) @map("created_at")
   lastUsedAt  DateTime? @map("last_used_at")
   revokedAt   DateTime? @map("revoked_at")
 
-  qrCode QrCode @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
-  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  table  Table  @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  qrCode   QrCode    @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+  branch   Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table    Table     @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([tenantId, branchId])
   @@index([tenantId, tableId])
+  @@index([tenantId, customerId])
   @@index([tenantId, expiresAt])
   @@map("qr_sessions")
 }
@@ -987,6 +1008,7 @@ model Customer {
   offerDispatches OfferDispatch[]
   tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   addresses       CustomerAddress[]
+  qrSessions      QrSession[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])

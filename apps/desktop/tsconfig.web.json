@@ -10,6 +10,9 @@
     "composite": true,
     "jsx": "react-jsx",
     "baseUrl": ".",
+    "types": [],
+    "typeRoots": [],
+    "skipLibCheck": true,
     "paths": {
       "@renderer/*": ["src/renderer/src/*"]
     }

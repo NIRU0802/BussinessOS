@@ -1,10 +1,9 @@
 {
   "name": "desktop",
   "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "description": "Business OS POS â€” Electron desktop terminal",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "Business OS",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -24,12 +23,18 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "electron-updater": "^6.3.9"
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.2.0",
+    "electron-log": "^5.2.0",
+    "electron-updater": "^6.3.9",
+    "lucide-react": "^1.33.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.19.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -50,7 +55,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron",
-      "esbuild"
+      "esbuild",
+      "better-sqlite3"
     ]
   }
 }

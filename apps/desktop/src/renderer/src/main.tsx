@@ -1,4 +1,5 @@
 import './assets/main.css'
+import './assets/tailwind-shim.css'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

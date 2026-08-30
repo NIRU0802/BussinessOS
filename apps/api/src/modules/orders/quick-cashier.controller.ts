@@ -5,6 +5,7 @@ import { QuickCashierService } from './quick-cashier.service';
 import { SetPinDto } from './dto/set-pin.dto';
 import { QuickLoginDto } from './dto/quick-login.dto';
 import { ToggleQuickCashierDto } from './dto/toggle-quick-cashier.dto';
+import { StaffListQueryDto } from './dto/staff-list-query.dto';
 import { IsUUID } from 'class-validator';
 
 class TenantScopedQuery {
@@ -33,11 +34,18 @@ export class QuickCashierController {
     return this.quickCashierService.setPin(req.user, dto);
   }
 
-  // Public() bypasses the global JwtAuthGuard for this one route — quick
-  // login happens WITHOUT an active session by design.
   @Public()
   @Post('quick-login')
   quickLogin(@Query() query: TenantScopedQuery, @Body() dto: QuickLoginDto) {
     return this.quickCashierService.quickLogin(dto, query.tenantId);
+  }
+
+  @Public()
+  @Get('staff-list')
+  getStaffList(@Query() query: StaffListQueryDto) {
+    return this.quickCashierService.getStaffList(
+      query.tenantId,
+      query.branchId,
+    );
   }
 }

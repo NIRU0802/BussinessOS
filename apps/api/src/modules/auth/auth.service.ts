@@ -30,13 +30,6 @@ export class AuthService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  /**
-   * Registers a brand-new tenant + its first Owner user in one transaction.
-   * This is the ONLY flow that creates a tenant without an existing
-   * authenticated/tenant-scoped context, so it deliberately uses the raw
-   * $transaction (not forTenant) â€” there's no tenant_id to scope by yet
-   * until the tenant row itself is created inside this same transaction.
-   */
   async register(dto: RegisterDto) {
     const passwordHash = await argon2.hash(dto.password);
     const slug = this.slugify(dto.tenantName);
@@ -101,19 +94,8 @@ export class AuthService {
       entityId: result.tenant.id,
     });
 
-    // tenant.created fires after the main transaction commits so listeners
-    // (e.g. ExpenseCategoriesService.seedDefaultCategories) can safely use
-    // prisma.forTenant() against an already-committed tenant row.
     this.eventEmitter.emit('tenant.created', { tenantId: result.tenant.id });
 
-    // Trial subscription is created AFTER the main transaction commits,
-    // since SubscriptionService uses prisma.forTenant() (its own
-    // transaction) rather than the raw `tx` client used above â€” the
-    // tenant row must already exist and be committed for RLS to allow
-    // a forTenant() call against it. Deliberately non-fatal: a tenant
-    // should never be blocked from registering just because trial-plan
-    // provisioning failed; this gets flagged for manual follow-up
-    // instead of surfacing a confusing error to a brand-new user.
     const defaultTrialPlanId = this.configService.get<string>(
       'DEFAULT_TRIAL_PLAN_ID',
     );

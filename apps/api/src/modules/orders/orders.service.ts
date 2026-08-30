@@ -28,6 +28,7 @@ import * as bcrypt from 'bcrypt';
 import {
   ORDER_EVENTS,
   OrderCreatedEvent,
+  OrderCreatedEventItem,
   OrderItemsAddedEvent,
   OrderStatusUpdatedEvent,
   OrderPaidEvent,
@@ -51,6 +52,31 @@ export class OrdersService {
     private readonly taxService: TaxService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
+
+  // Duplicated from OrdersService rather than shared, since the two
+  // services aren't otherwise coupled — resolves productId -> MenuItem.name
+  // for KDS ticket event payloads. Falls back to "Unknown item" for any
+  // productId that no longer resolves (deleted menu item).
+  private async resolveItemNames(
+    tenantId: string,
+    productIds: string[],
+  ): Promise<Map<string, string>> {
+    const uniqueIds = Array.from(new Set(productIds));
+    const menuItems = await this.prisma.forTenant(tenantId, (tx) =>
+      tx.menuItem.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true, name: true },
+      }),
+    );
+    const map = new Map<string, string>();
+    for (const item of menuItems) {
+      map.set(item.id, item.name);
+    }
+    return map;
+  }
+
+  // ---------------------------------------------------------------------
+  // PULL: everything changed since lastSyncedAt, for this branch.
 
   // ---------------------------------------------------------------------
   // CREATE ORDER — idempotent on clientGeneratedId. Tax is ALWAYS
@@ -128,12 +154,28 @@ export class OrdersService {
       }),
     );
 
+    const nameMap = await this.resolveItemNames(
+      user.tenantId,
+      order.items.map((i) => i.productId),
+    );
+
+    const eventItems: OrderCreatedEventItem[] = order.items.map((item) => {
+      const modifiers = item.modifiers as { notes?: string } | null;
+      return {
+        orderItemId: item.id,
+        menuItemName: nameMap.get(item.productId) ?? 'Unknown item',
+        quantity: item.quantity,
+        notes: modifiers?.notes ?? null,
+      };
+    });
+
     this.eventEmitter.emit(ORDER_EVENTS.CREATED, {
       tenantId: user.tenantId,
       branchId: dto.branchId,
       orderId: order.id,
       channel: order.channel,
       tableId: order.tableId,
+      items: eventItems,
     } satisfies OrderCreatedEvent);
 
     if (dto.tableId) {
@@ -311,18 +353,22 @@ export class OrdersService {
       });
       const nextBatch = (lastBatch._max.batchNumber ?? 0) + 1;
 
-      await tx.orderItem.createMany({
-        data: dto.items.map((item) => ({
-          tenantId: user.tenantId,
-          orderId,
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPrice: new Prisma.Decimal(item.unitPrice),
-          modifiers: (item.modifiers ??
-            Prisma.JsonNull) as Prisma.InputJsonValue,
-          batchNumber: nextBatch,
-        })),
-      });
+      const createdItems = await Promise.all(
+        dto.items.map((item) =>
+          tx.orderItem.create({
+            data: {
+              tenantId: user.tenantId,
+              orderId,
+              productId: item.productId,
+              quantity: item.quantity,
+              unitPrice: new Prisma.Decimal(item.unitPrice),
+              modifiers: (item.modifiers ??
+                Prisma.JsonNull) as Prisma.InputJsonValue,
+              batchNumber: nextBatch,
+            },
+          }),
+        ),
+      );
 
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
@@ -335,14 +381,34 @@ export class OrdersService {
         include: { items: true, payments: true },
       });
 
-      return { updatedOrder, nextBatch };
+      return { updatedOrder, nextBatch, createdItems };
     });
+
+    const nameMap = await this.resolveItemNames(
+      user.tenantId,
+      updated.createdItems.map((i) => i.productId),
+    );
+
+    const eventItems: OrderCreatedEventItem[] = updated.createdItems.map(
+      (item) => {
+        const modifiers = item.modifiers as { notes?: string } | null;
+        return {
+          orderItemId: item.id,
+          menuItemName: nameMap.get(item.productId) ?? 'Unknown item',
+          quantity: item.quantity,
+          notes: modifiers?.notes ?? null,
+        };
+      },
+    );
 
     this.eventEmitter.emit(ORDER_EVENTS.ITEMS_ADDED, {
       tenantId: user.tenantId,
       branchId: order.branchId,
       orderId,
       batchNumber: updated.nextBatch,
+      tableId: order.tableId,
+      channel: order.channel,
+      items: eventItems,
     } satisfies OrderItemsAddedEvent);
 
     return updated.updatedOrder;

@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useDisableWhenOffline } from "@/components/OfflineBanner";
+import { BranchPicker } from "@/components/BranchPicker";
 import { fetchEffectiveMenu, createOrder, extractApiErrorMessage } from "@/lib/api-client";
 import { tokenStorage } from "@/lib/token-storage";
-import type { EffectiveMenuItem, CreateOrderItemPayload } from "@/lib/types";
+import type { EffectiveMenuItem, CreateOrderItemPayload, CreatedOrder } from "@/lib/types";
 
 interface CartLine {
   item: EffectiveMenuItem;
@@ -18,19 +19,14 @@ export default function HomePage() {
   const { session, loading: sessionLoading } = useAuth();
   const { disabled, reason } = useDisableWhenOffline();
 
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [menu, setMenu] = useState<EffectiveMenuItem[]>([]);
   const [menuLoading, setMenuLoading] = useState(true);
   const [menuError, setMenuError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-
-  // Staff can have multiple branches (JWT.branchIds is an array). This
-  // takes the first assigned branch as the active POS branch. If your
-  // staff regularly work multiple branches, this needs a real branch
-  // switcher — flagging as a known gap rather than guessing a UI for it.
-  const branchId = session?.branchIds[0];
+  const [lastOrder, setLastOrder] = useState<CreatedOrder | null>(null);
 
   useEffect(() => {
     if (!sessionLoading && !session) {
@@ -38,21 +34,31 @@ export default function HomePage() {
     }
   }, [sessionLoading, session, router]);
 
+  // Default to the first assigned branch once session loads. If staff has
+  // more than one, BranchPicker lets them switch — this just sets the
+  // initial value.
   useEffect(() => {
-    if (!branchId) return;
+    if (session && session.branchIds.length > 0 && !activeBranchId) {
+      setActiveBranchId(session.branchIds[0]);
+    }
+  }, [session, activeBranchId]);
+
+  useEffect(() => {
+    if (!activeBranchId) return;
     setMenuLoading(true);
     setMenuError(null);
-    fetchEffectiveMenu(branchId)
+    setCart([]); // clear cart when switching branches — prices/availability differ per branch
+    fetchEffectiveMenu(activeBranchId)
       .then(setMenu)
       .catch((err) => setMenuError(extractApiErrorMessage(err)))
       .finally(() => setMenuLoading(false));
-  }, [branchId]);
+  }, [activeBranchId]);
 
   if (sessionLoading || !session) {
     return <main style={{ padding: 24 }}>Loading session...</main>;
   }
 
-  if (!branchId) {
+  if (session.branchIds.length === 0) {
     return (
       <main style={{ padding: 24 }}>
         <p style={{ color: "#b91c1c" }}>
@@ -82,10 +88,17 @@ export default function HomePage() {
     );
   };
 
-  const total = cart.reduce((sum, line) => sum + line.item.effectivePrice * line.quantity, 0);
+  // This is a DISPLAY-ONLY estimate shown before submission. It is NOT
+  // sent as the final total — the server always independently recomputes
+  // tax (OrdersService.createOrder -> recomputeTax) and its response is
+  // the only authoritative source of truth for what the customer owes.
+  const estimatedSubtotal = cart.reduce(
+    (sum, line) => sum + line.item.effectivePrice * line.quantity,
+    0,
+  );
 
   const handleSubmitOrder = async () => {
-    if (disabled || cart.length === 0 || !branchId) return;
+    if (disabled || cart.length === 0 || !activeBranchId) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -95,25 +108,27 @@ export default function HomePage() {
         unitPrice: line.item.effectivePrice.toFixed(2),
       }));
 
-      const subtotal = total.toFixed(2);
-      // NOTE: tax calculation isn't wired here — Phase 2's Tax Engine
-      // should supply the real taxAmount. Sending 0.00 as a placeholder;
-      // replace once the tax-calculation endpoint/shape is confirmed.
-      const taxAmount = "0.00";
-      const orderTotal = (total + Number(taxAmount)).toFixed(2);
+      const subtotal = estimatedSubtotal.toFixed(2);
+      // taxAmount/total sent here are only a preview — there is no tax
+      // preview endpoint (confirmed: apps/api's TaxController only has
+      // classes/rules CRUD, no calculate route). The server always
+      // recomputes both authoritatively in recomputeTax() and returns the
+      // real values in the response below, which is what we display.
+      const previewTaxAmount = "0.00";
+      const previewTotal = subtotal;
 
-      await createOrder({
-        branchId,
+      const created = await createOrder({
+        branchId: activeBranchId,
         deviceId: tokenStorage.getOrCreateDeviceId(),
         clientGeneratedId: crypto.randomUUID(),
         channel: "pos",
         items,
         subtotal,
-        taxAmount,
-        total: orderTotal,
+        taxAmount: previewTaxAmount,
+        total: previewTotal,
       });
 
-      setSubmitted(true);
+      setLastOrder(created);
       setCart([]);
     } catch (err) {
       setSubmitError(extractApiErrorMessage(err));
@@ -123,11 +138,19 @@ export default function HomePage() {
   };
 
   return (
-    <main style={{ padding: 20, paddingBottom: 120 }}>
+    <main style={{ padding: 20, paddingBottom: 140 }}>
       <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Business OS Mobile POS</h1>
-      <p style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>
+      <p style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>
         Tap items to add to the order
       </p>
+
+      {activeBranchId && (
+        <BranchPicker
+          branchIds={session.branchIds}
+          activeBranchId={activeBranchId}
+          onSelect={setActiveBranchId}
+        />
+      )}
 
       {menuLoading && <p style={{ fontSize: 13, color: "#64748b" }}>Loading menu...</p>}
       {menuError && <p style={{ fontSize: 13, color: "#b91c1c" }}>{menuError}</p>}
@@ -199,7 +222,7 @@ export default function HomePage() {
           }}
         >
           <span>{cart.reduce((n, l) => n + l.quantity, 0)} item(s)</span>
-          <span style={{ fontWeight: 700 }}>₹{total.toFixed(2)}</span>
+          <span style={{ fontWeight: 700 }}>₹{estimatedSubtotal.toFixed(2)} (excl. tax)</span>
         </div>
 
         {disabled && <p style={{ fontSize: 12, color: "#b91c1c", marginBottom: 8 }}>{reason}</p>}
@@ -225,10 +248,13 @@ export default function HomePage() {
           {submitting ? "Submitting..." : "Submit Order"}
         </button>
 
-        {submitted && (
-          <p style={{ fontSize: 12, color: "#16a34a", marginTop: 8, textAlign: "center" }}>
-            Order submitted successfully.
-          </p>
+        {lastOrder && (
+          <div style={{ marginTop: 10, fontSize: 12, color: "#16a34a", textAlign: "center" }}>
+            <p>Order submitted successfully.</p>
+            <p style={{ marginTop: 4 }}>
+              Subtotal ₹{lastOrder.subtotal} · Tax ₹{lastOrder.taxAmount} · Total ₹{lastOrder.total}
+            </p>
+          </div>
         )}
       </div>
     </main>

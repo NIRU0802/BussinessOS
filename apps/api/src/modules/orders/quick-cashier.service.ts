@@ -102,16 +102,6 @@ export class QuickCashierService {
     return { success: true, updatedAt: record.updatedAt };
   }
 
-  // ---------------------------------------------------------------------
-  // Quick login: PIN-based auth for an EXISTING account, same permissions
-  // as full login. Token payload is built with the EXACT same shape and
-  // logic as AuthService.login() — sub, tenantId, branchIds, isAllBranches,
-  // roles, permissions — signed with the same secret/TTL, so JwtStrategy
-  // and PermissionsGuard treat quick-login and full-login tokens
-  // identically. No refresh token is issued here (shared-terminal PIN
-  // login is short-lived by design — re-PIN when the access token expires
-  // rather than silently refreshing in the background).
-  // ---------------------------------------------------------------------
   async quickLogin(dto: QuickLoginDto, tenantId: string) {
     const setting = await this.prisma.forTenant(tenantId, (tx) =>
       tx.quickCashierSetting.findUnique({
@@ -210,5 +200,41 @@ export class QuickCashierService {
         roles: roleNames,
       },
     };
+  }
+
+  async getStaffList(tenantId: string, branchId: string) {
+    const users = await this.prisma.forTenant(tenantId, (tx) =>
+      tx.user.findMany({
+        where: {
+          isActive: true,
+          deletedAt: null,
+          OR: [{ isAllBranches: true }, { branches: { some: { branchId } } }],
+        },
+        include: {
+          roles: { include: { role: true } },
+        },
+      }),
+    );
+
+    const pins = await this.prisma.forTenant(tenantId, (tx) =>
+      tx.userPin.findMany({
+        where: { userId: { in: users.map((u) => u.id) } },
+      }),
+    );
+    const pinByUserId = new Map(pins.map((p) => [p.userId, p]));
+
+    return users.map((user) => {
+      const roleNames = user.roles.map((ur) => ur.role.name);
+      const pin = pinByUserId.get(user.id);
+      return {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        roles: roleNames,
+        hasPassword: Boolean(user.passwordHash),
+        hasPin: Boolean(pin),
+        pinHash: pin ? pin.pinHash : null,
+      };
+    });
   }
 }

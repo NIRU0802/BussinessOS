@@ -10,6 +10,50 @@ export interface Branch {
   isActive: boolean;
 }
 
+// Add alongside existing types — mirrors the Order shape returned by
+// OrdersService.createOrder (Prisma Order + items + payments included).
+// Prisma Decimal fields serialize as strings over JSON.
+
+export interface OrderItemRecord {
+  id: string;
+  tenantId: string;
+  orderId: string;
+  productId: string;
+  quantity: number;
+  unitPrice: string;
+  modifiers: Record<string, unknown> | null;
+  batchNumber: number;
+}
+
+export interface OrderPaymentRecord {
+  id: string;
+  orderId: string;
+  // Payment fields intentionally left loose — this response is 200 for
+  // order creation, payments will always be empty here since payment
+  // happens in a separate flow. Not worth fully typing until the mobile
+  // app actually handles payment recording.
+  [key: string]: unknown;
+}
+
+export interface CreatedOrder {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  tableId: string | null;
+  deviceId: string;
+  clientGeneratedId: string;
+  channel: OrderChannel;
+  status: string;
+  subtotal: string;
+  taxAmount: string; // server-computed, authoritative — always trust this over what was sent
+  total: string; // server-computed, authoritative
+  createdBy: string;
+  items: OrderItemRecord[];
+  payments: OrderPaymentRecord[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface JwtPayload {
   sub: string;
   tenantId: string;
