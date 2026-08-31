@@ -1,159 +1,156 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth-context";
+import {
+  fetchBranding,
+  updateBranding,
+  uploadBrandingLogo,
+  type Branding,
+} from "@/lib/api/branding-api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { changeOwnPassword } from "@/lib/api/staff-api";
+import { Input } from "@/components/ui/input";
+import { ImageUpload } from "@/components/ui/image-upload";
 import { extractApiErrorMessage } from "@/lib/api-client";
 
-/**
- * IMPORTANT — backend gaps affecting this screen, not silently worked
- * around:
- *
- * 1. No PATCH /tenants/:id (or any tenant-settings endpoint) exists.
- *    Tenant currency/language defaults are shown READ-ONLY below because
- *    there is currently no way to save changes to them.
- *
- * 2. There is no notification-preferences model/endpoint. The
- *    notification module only exposes POST /notifications/send (send one
- *    message right now), not a per-channel enable/disable preference a
- *    tenant can configure and persist. That section is omitted rather
- *    than built as a fake toggle that doesn't save anything real.
- *
- * 3. Custom domain support has no backend at all yet — shown as a
- *    clearly-marked future/upsell placeholder per the Phase 14 spec,
- *    matching what was explicitly asked for (non-functional by design).
- *
- * Change Password (below) uses POST /staff/me/change-password, added
- * alongside staff reactivate/update — this is real and functional.
- */
-export default function SettingsPage() {
-  const { tenant } = useAuth();
+const COLOR_FIELDS: { key: keyof Branding; label: string }[] = [
+  { key: "primaryColor", label: "Primary Color" },
+  { key: "primaryColorDark", label: "Primary Color (Dark)" },
+  { key: "inkColor", label: "Text / Ink Color" },
+  { key: "surfaceColor", label: "Surface Color" },
+];
+
+export default function BrandingSettingsPage() {
+  const queryClient = useQueryClient();
+  const { data: branding, isLoading } = useQuery({
+    queryKey: ["branding"],
+    queryFn: fetchBranding,
+  });
+
+  const [form, setForm] = useState<Partial<Branding>>({});
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  useEffect(() => {
+    if (branding) setForm(branding);
+  }, [branding]);
+
+  const mutation = useMutation({
+    mutationFn: updateBranding,
+    onSuccess: (data) => {
+      queryClient.setQueryData(["branding"], data);
+      toast.success("Branding saved");
+    },
+    onError: (err) => {
+      toast.error(extractApiErrorMessage(err));
+    },
+  });
+
+  const handleChange = (key: keyof Branding, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleLogoUpload = async (file: File) => {
+    setIsUploadingLogo(true);
+    try {
+      const { objectKey, url } = await uploadBrandingLogo(file);
+      setForm((prev) => ({ ...prev, logoObjectKey: objectKey, logoUrl: url }));
+    } catch (err) {
+      toast.error(extractApiErrorMessage(err));
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const handleSave = () => {
+    mutation.mutate(form);
+  };
+
+  if (isLoading) {
+    return <div className="text-sm text-slate-500">Loading branding settings…</div>;
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-2xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Settings</h1>
-        <p className="text-sm text-slate-500">Tenant configuration and preferences.</p>
+        <h1 className="text-xl font-semibold text-slate-900">Branding</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Customize how your business appears across the dashboard, mobile app, and customer-facing
+          pages.
+        </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Workspace</CardTitle>
+          <CardTitle>Business Identity</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex justify-between text-sm">
-            <span className="text-slate-500">Name</span>
-            <span className="text-slate-900">{tenant?.name ?? "—"}</span>
+        <CardContent className="space-y-4">
+          <Input
+            label="Business Name"
+            value={form.businessName ?? ""}
+            onChange={(e) => handleChange("businessName", e.target.value)}
+            placeholder="e.g. The Coffee House"
+          />
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Logo</label>
+            <ImageUpload
+              currentImageUrl={form.logoUrl}
+              onUpload={handleLogoUpload}
+              isUploading={isUploadingLogo}
+            />
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-slate-500">Workspace slug</span>
-            <span className="text-slate-900">{tenant?.slug ?? "—"}</span>
-          </div>
-          <p className="rounded-md bg-slate-50 p-3 text-xs text-slate-500">
-            Currency and language defaults aren&apos;t editable yet — there&apos;s no backend
-            endpoint to save tenant-level settings changes. This needs a{" "}
-            <code className="rounded bg-slate-100 px-1">PATCH /tenants/:id</code> route added before
-            this section can become interactive.
-          </p>
         </CardContent>
       </Card>
-
-      <ChangePasswordCard />
 
       <Card>
         <CardHeader>
-          <CardTitle>Custom Domain</CardTitle>
+          <CardTitle>Colors</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center justify-between rounded-md border border-slate-200 p-3">
-            <div>
-              <p className="text-sm font-medium text-slate-900">
-                {tenant?.slug ? `${tenant.slug}.businessos.app` : "your-workspace.businessos.app"}
-              </p>
-              <p className="text-xs text-slate-500">Free subdomain, active by default</p>
-            </div>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4">
+            {COLOR_FIELDS.map(({ key, label }) => (
+              <div key={key}>
+                <label className="mb-1 block text-sm font-medium text-slate-700">{label}</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={(form[key] as string) ?? "#000000"}
+                    onChange={(e) => handleChange(key, e.target.value)}
+                    className="h-9 w-9 cursor-pointer rounded border border-slate-200"
+                  />
+                  <Input
+                    value={(form[key] as string) ?? ""}
+                    onChange={(e) => handleChange(key, e.target.value)}
+                    placeholder="#000000"
+                  />
+                </div>
+              </div>
+            ))}
           </div>
-          <button
-            disabled
-            className="w-full rounded-md border border-dashed border-slate-300 py-2 text-sm text-slate-400"
-            title="Coming soon"
-          >
-            Connect custom domain (coming soon)
-          </button>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Receipts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Input
+            label="Receipt Footer Text"
+            value={form.receiptFooterText ?? ""}
+            onChange={(e) => handleChange("receiptFooterText", e.target.value)}
+            placeholder="e.g. Thank you for visiting!"
+          />
+        </CardContent>
+      </Card>
+
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} isLoading={mutation.isPending}>
+          Save Branding
+        </Button>
+      </div>
     </div>
-  );
-}
-
-function ChangePasswordCard() {
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (newPassword !== confirmPassword) {
-      toast.error("New password and confirmation do not match");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      await changeOwnPassword({ currentPassword, newPassword });
-      toast.success("Password updated");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-    } catch (err) {
-      toast.error(extractApiErrorMessage(err));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Change Password</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="max-w-sm space-y-3">
-          <Input
-            label="Current password"
-            type="password"
-            required
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-          />
-          <Input
-            label="New password"
-            type="password"
-            required
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-          />
-          <p className="text-xs text-slate-500">
-            At least 10 characters, with uppercase, lowercase, and a number.
-          </p>
-          <Input
-            label="Confirm new password"
-            type="password"
-            required
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-          />
-          <Button type="submit" isLoading={isSubmitting}>
-            Update password
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
   );
 }

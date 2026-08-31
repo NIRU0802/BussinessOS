@@ -143,6 +143,15 @@ export interface AddOrderItemsResult {
   error?: string
 }
 
+export interface Branding {
+  businessName: string | null
+  logoUrl: string | null
+  primaryColor: string
+  primaryColorDark: string
+  inkColor: string
+  surfaceColor: string
+  fontDisplay: string
+}
 export interface Api {
   device: {
     getConfig: () => Promise<DeviceConfig | null>
@@ -174,6 +183,9 @@ export interface Api {
   }
   tables: {
     getForBranch: (branchId: string) => Promise<TableFetchResult>
+  }
+  branding: {
+    get: () => Promise<Branding>
   }
 }
 

@@ -3,6 +3,7 @@ import { iosPwaHeadTags } from "./head-meta";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { OfflineStatusProvider } from "@/components/OfflineBanner";
 import { AuthProvider } from "@/lib/auth-context";
+import { BrandingProvider } from "@/components/BrandingProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,10 +26,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>{iosPwaHeadTags}</head>
       <body>
         <AuthProvider>
-          <OfflineStatusProvider>
-            {children}
-            <InstallPrompt />
-          </OfflineStatusProvider>
+          <BrandingProvider>
+            <OfflineStatusProvider>
+              {children}
+              <InstallPrompt />
+            </OfflineStatusProvider>
+          </BrandingProvider>
         </AuthProvider>
       </body>
     </html>

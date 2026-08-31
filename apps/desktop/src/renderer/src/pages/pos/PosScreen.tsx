@@ -31,6 +31,17 @@ export function PosScreen() {
     }
   }, [])
 
+  useEffect(() => {
+    window.api.branding.get().then((branding) => {
+      const root = document.documentElement
+      root.style.setProperty('--accent-600', branding.primaryColor)
+      root.style.setProperty('--accent-700', branding.primaryColorDark)
+      root.style.setProperty('--ink-900', branding.inkColor)
+      root.style.setProperty('--surface', branding.surfaceColor)
+      if (branding.businessName) document.title = branding.businessName
+    })
+  }, [])
+
   if (configError) {
     return (
       <div
@@ -51,7 +62,7 @@ export function PosScreen() {
         style={{ background: 'var(--paper-50)' }}
       >
         <p className="text-sm font-medium" style={{ color: 'var(--ink-400)' }}>
-          Loading device configuration…
+          Loading device configurationâ€¦
         </p>
       </div>
     )

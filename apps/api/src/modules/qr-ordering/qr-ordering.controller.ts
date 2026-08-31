@@ -9,20 +9,32 @@ import type { QrSession } from '../tables/qr/qr-session.service';
 import { CreateQrCustomerDto } from './dto/create-qr-customer.dto';
 import { QrCreateOrderDto } from './dto/qr-order-item.dto';
 import { QrOrderingService } from './qr-ordering.service';
+import { BrandingService } from '../branding/branding.service';
 
 @Controller('qr')
 @Public()
 @UseGuards(QrSessionGuard)
 export class QrOrderingController {
-  constructor(private readonly qrOrderingService: QrOrderingService) {}
+  constructor(
+    private readonly qrOrderingService: QrOrderingService,
+    private readonly brandingService: BrandingService,
+  ) {}
 
   @Get('session')
-  getSession(@CurrentQrSession() session: QrSession) {
+  async getSession(@CurrentQrSession() session: QrSession) {
+    const branding = await this.brandingService.getBranding(session.tenantId);
     return {
       branchId: session.branchId,
       tableId: session.tableId,
       qrSessionId: session.qrSessionId,
       customerId: session.customerId,
+      branding: {
+        businessName: branding.businessName,
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+        inkColor: branding.inkColor,
+        surfaceColor: branding.surfaceColor,
+      },
     };
   }
 

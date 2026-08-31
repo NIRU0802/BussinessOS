@@ -20,6 +20,7 @@ import {
   getOutboxHistory
 } from './services/syncService'
 import { getTablesForBranch } from './services/tablesService'
+import { fetchBranding } from './services/brandingService'
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('device:get-device-id', () => getOrCreateDeviceId())
@@ -93,4 +94,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tables:get-for-branch', (_event, branchId: string) =>
     getTablesForBranch(branchId)
   )
+
+  ipcMain.handle('branding:get', () => fetchBranding())
 }

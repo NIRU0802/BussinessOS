@@ -36,6 +36,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 import { PlansManagementModule } from './modules/super-admin/plans-management/plans-management.module';
+import { BrandingModule } from './modules/branding/branding.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { PlansManagementModule } from './modules/super-admin/plans-management/pl
     ExpensesModule,
     SuperAdminModule,
     PlansManagementModule,
+    BrandingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

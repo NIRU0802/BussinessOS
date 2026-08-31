@@ -8,14 +8,22 @@ import { BranchSwitcher } from "./branch-switcher";
 interface TopbarProps {
   branches: Branch[];
   branchesLoading: boolean;
+  logoUrl?: string | null;
 }
 
-export function Topbar({ branches, branchesLoading }: TopbarProps) {
+export function Topbar({ branches, branchesLoading, logoUrl }: TopbarProps) {
   const { user, tenant, logout } = useAuth();
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-5">
       <div className="flex items-center gap-4">
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={tenant?.name ?? "Logo"}
+            className="h-8 w-8 rounded object-contain"
+          />
+        ) : null}
         <span className="text-sm font-medium text-slate-900">{tenant?.name ?? "Business OS"}</span>
         <BranchSwitcher branches={branches} isLoading={branchesLoading} />
       </div>

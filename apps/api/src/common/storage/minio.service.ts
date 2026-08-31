@@ -54,7 +54,7 @@ export class MinioService {
    */
   async uploadFile(params: {
     tenantId: string;
-    namespace: 'products' | 'combos' | 'invoices' | 'receipts';
+    namespace: 'products' | 'combos' | 'invoices' | 'receipts' | 'branding';
     buffer: Buffer;
     mimeType: string;
     originalFilename: string;

@@ -8,6 +8,7 @@ import apiClient from "@/lib/api-client";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import type { Branch } from "@/lib/types";
+import { fetchBranding } from "@/lib/api/branding-api";
 
 async function fetchBranches(): Promise<Branch[]> {
   const res = await apiClient.get<Branch[]>("/branches");
@@ -30,6 +31,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     enabled: isAuthenticated,
   });
 
+  const { data: branding } = useQuery({
+    queryKey: ["branding"],
+    queryFn: fetchBranding,
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (!branding) return;
+    const root = document.documentElement;
+    root.style.setProperty("--color-primary", branding.primaryColor);
+    root.style.setProperty("--color-primary-dark", branding.primaryColorDark);
+    root.style.setProperty("--color-ink", branding.inkColor);
+    root.style.setProperty("--color-surface", branding.surfaceColor);
+    root.style.setProperty("--font-display", branding.fontDisplay);
+
+    if (branding.faviconUrl) {
+      let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.head.appendChild(link);
+      }
+      link.href = branding.faviconUrl;
+    }
+
+    if (branding.businessName) {
+      document.title = branding.businessName;
+    }
+  }, [branding]);
+
   if (isLoading || !isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
@@ -42,7 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
       <div className="flex flex-1 flex-col">
-        <Topbar branches={branches} branchesLoading={branchesLoading} />
+        <Topbar branches={branches} branchesLoading={branchesLoading} logoUrl={branding?.logoUrl} />
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>

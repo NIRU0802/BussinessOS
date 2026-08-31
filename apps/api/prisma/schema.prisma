@@ -21,6 +21,7 @@ model Tenant {
   auditLogs           AuditLog[]
   branchMenuOverrides BranchMenuItemOverride[]
   branches            Branch[]
+  branding            TenantBranding?
   combos              Combo[]
   devices             Device[]
   menuCategories      MenuCategory[]
@@ -466,19 +467,20 @@ model BranchTimezoneSetting {
 }
 
 model TenantBranding {
-  id                String   @id @default(uuid())
-  tenantId          String   @unique @map("tenant_id")
-  businessName      String?  @map("business_name")
-  logoUrl           String?  @map("logo_url")
-  faviconUrl        String?  @map("favicon_url")
-  primaryColor      String?  @map("primary_color")
-  primaryColorDark  String?  @map("primary_color_dark")
-  inkColor          String?  @map("ink_color")
-  surfaceColor      String?  @map("surface_color")
-  fontDisplay       String?  @map("font_display")
-  receiptFooterText String?  @map("receipt_footer_text")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(uuid())
+  tenantId           String   @unique @map("tenant_id")
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  businessName       String?  @map("business_name")
+  logoObjectKey      String?  @map("logo_object_key")
+  faviconObjectKey   String?  @map("favicon_object_key")
+  primaryColor       String?  @map("primary_color")
+  primaryColorDark   String?  @map("primary_color_dark")
+  inkColor           String?  @map("ink_color")
+  surfaceColor       String?  @map("surface_color")
+  fontDisplay        String?  @map("font_display")
+  receiptFooterText  String?  @map("receipt_footer_text")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("tenant_branding")
 }

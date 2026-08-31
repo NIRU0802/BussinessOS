@@ -1,12 +1,21 @@
-﻿"use client";
+"use client";
 
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { QrMenu, type MenuItem } from "@/components/qr-ordering/qr-menu";
 
+interface Branding {
+  primaryColor: string;
+  inkColor: string;
+  surfaceColor: string;
+  logoUrl: string | null;
+  businessName: string | null;
+}
+
 interface QrSessionInfo {
   branchId: string;
   tableId: string;
+  branding?: Branding;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -64,6 +73,15 @@ export default function QrOrderingPage() {
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!session?.branding) return;
+    const root = document.documentElement;
+    root.style.setProperty("--color-primary", session.branding.primaryColor);
+    root.style.setProperty("--color-ink", session.branding.inkColor);
+    root.style.setProperty("--color-surface", session.branding.surfaceColor);
+    if (session.branding.businessName) document.title = session.branding.businessName;
+  }, [session]);
+
   const placeOrder = useCallback(
     async (
       items: {
@@ -115,6 +133,9 @@ export default function QrOrderingPage() {
   return (
     <main className="flex-1 flex flex-col">
       <header className="border-b border-neutral-200 dark:border-neutral-800 px-4 py-3">
+        {session.branding?.logoUrl && (
+          <img src={session.branding.logoUrl} alt="" className="h-6 mb-1" />
+        )}
         <p className="text-xs uppercase tracking-wide text-neutral-500">Table</p>
         <h1 className="text-lg font-semibold">Table {session.tableId.slice(0, 8)}</h1>
       </header>

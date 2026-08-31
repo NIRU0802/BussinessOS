@@ -40,6 +40,9 @@ const api = {
   },
   tables: {
     getForBranch: (branchId: string) => ipcRenderer.invoke('tables:get-for-branch', branchId)
+  },
+  branding: {
+    get: () => ipcRenderer.invoke('branding:get')
   }
 }
 
